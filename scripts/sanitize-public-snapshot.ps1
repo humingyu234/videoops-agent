@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $resolvedRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
-$expectedRoot = 'C:\Users\Administrator\Documents\videoops-agent'
+$expectedRoot = 'D:\project\videoops-agent'
 if ($resolvedRoot -ne $expectedRoot) {
     throw "Refusing to sanitize an unexpected directory: $resolvedRoot"
 }
