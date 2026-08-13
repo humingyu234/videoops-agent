@@ -1,0 +1,331 @@
+{
+  "projectId": "90071992547409931",
+  "timelineDraftId": "90071992547409935",
+  "revision": "3",
+  "schemaVersion": "timeline-1",
+  "contentHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "timeline": {
+    "schemaVersion": "timeline-1",
+    "canvas": {
+      "width": 1080,
+      "height": 1920,
+      "frameRate": 30,
+      "durationMs": 30000,
+      "safeMarginRatio": 0.05
+    },
+    "tracks": [
+      {
+        "trackId": "track_fancy_01",
+        "trackType": "fancy_text",
+        "area": "top",
+        "order": 0,
+        "locked": false,
+        "muted": false,
+        "elements": [
+          {
+            "elementId": "fancy_0001",
+            "elementType": "fancy_text",
+            "startMs": 2000,
+            "endMs": 6000,
+            "zIndex": 500,
+            "enabled": true,
+            "locked": false,
+            "label": "核心卖点",
+            "text": "三步做出专业视频",
+            "templateCode": "keyword_pop",
+            "fontCode": "noto_sans_cjk_sc_regular",
+            "fontVersion": "2.004",
+            "fontSha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+            "color": "#FFFFFFFF",
+            "accentColor": "#FFCC00FF",
+            "transform": {
+              "xRatio": 0.15,
+              "yRatio": 0.12,
+              "widthRatio": 0.7,
+              "heightRatio": 0.12,
+              "rotationDeg": 0,
+              "opacity": 1
+            },
+            "animationIntensity": "normal",
+            "enterDurationMs": 400,
+            "exitDurationMs": 300,
+            "suggestionTaskId": "90071992547409940",
+            "suggestionReason": "突出步骤少和成片专业两个关键信息"
+          }
+        ]
+      },
+      {
+        "trackId": "track_subtitle_01",
+        "trackType": "subtitle",
+        "area": "top",
+        "order": 1,
+        "locked": false,
+        "muted": false,
+        "elements": [
+          {
+            "elementId": "subtitle_0001",
+            "elementType": "subtitle",
+            "startMs": 0,
+            "endMs": 4000,
+            "zIndex": 400,
+            "enabled": true,
+            "locked": false,
+            "label": "开场字幕",
+            "sourceTextSnapshot": "欢迎使用 AI 视频！",
+            "displayText": "欢迎使用AI视频",
+            "sourceStartOffset": 0,
+            "sourceEndOffset": 10,
+            "fontCode": "noto_sans_cjk_sc_regular",
+            "fontVersion": "2.004",
+            "fontSha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+            "fontSizePx": 48,
+            "color": "#FFFFFFFF",
+            "backgroundEnabled": true,
+            "backgroundColor": "#00000099",
+            "outlineEnabled": true,
+            "outlineColor": "#000000FF",
+            "outlineWidthPx": 2,
+            "safeAreaAnchor": "lower",
+            "alignment": "center"
+          }
+        ]
+      },
+      {
+        "trackId": "track_effect_01",
+        "trackType": "visual_effect",
+        "area": "top",
+        "order": 2,
+        "locked": false,
+        "muted": false,
+        "elements": [
+          {
+            "elementId": "effect_0001",
+            "elementType": "visual_effect",
+            "startMs": 0,
+            "endMs": 1500,
+            "zIndex": 300,
+            "enabled": true,
+            "locked": false,
+            "label": "开场淡入",
+            "effectCode": "fade_in",
+            "durationMs": 1500,
+            "scale": null,
+            "radius": null
+          }
+        ]
+      },
+      {
+        "trackId": "track_image_01",
+        "trackType": "image_overlay",
+        "area": "top",
+        "order": 3,
+        "locked": false,
+        "muted": false,
+        "elements": [
+          {
+            "elementId": "image_0001",
+            "elementType": "image_overlay",
+            "startMs": 6000,
+            "endMs": 10000,
+            "zIndex": 200,
+            "enabled": true,
+            "locked": false,
+            "label": "产品示意图",
+            "assetId": "90071992547410001",
+            "transform": {
+              "xRatio": 0.1,
+              "yRatio": 0.25,
+              "widthRatio": 0.8,
+              "heightRatio": 0.4,
+              "rotationDeg": 0,
+              "opacity": 1
+            },
+            "fitMode": "contain",
+            "crop": {
+              "xRatio": 0,
+              "yRatio": 0,
+              "widthRatio": 1,
+              "heightRatio": 1
+            },
+            "fade": {
+              "fadeInMs": 0,
+              "fadeOutMs": 0
+            },
+            "sourceStartOffset": 10,
+            "sourceEndOffset": 22,
+            "adoptedPrompt": "竖屏构图的现代视频编辑工作台界面，明亮简洁，电影感光线",
+            "sourceTaskId": "90071992547409941"
+          }
+        ]
+      },
+      {
+        "trackId": "track_pip_01",
+        "trackType": "pip_video",
+        "area": "top",
+        "order": 4,
+        "locked": false,
+        "muted": false,
+        "elements": [
+          {
+            "elementId": "pip_0001",
+            "elementType": "pip_video",
+            "startMs": 10000,
+            "endMs": 22000,
+            "zIndex": 250,
+            "enabled": true,
+            "locked": false,
+            "label": "右上角演示",
+            "assetId": "90071992547410002",
+            "transform": {
+              "xRatio": 0.63,
+              "yRatio": 0.08,
+              "widthRatio": 0.32,
+              "heightRatio": 0.32,
+              "rotationDeg": 0,
+              "opacity": 1
+            },
+            "fitMode": "cover",
+            "crop": {
+              "xRatio": 0,
+              "yRatio": 0,
+              "widthRatio": 1,
+              "heightRatio": 1
+            },
+            "fade": {
+              "fadeInMs": 0,
+              "fadeOutMs": 0
+            },
+            "sourceDurationMs": 5000,
+            "sourceStartMs": 0,
+            "loopWhenOverflow": true,
+            "audioEnabled": false
+          }
+        ]
+      },
+      {
+        "trackId": "track_main_video",
+        "trackType": "main_video",
+        "area": "center",
+        "order": 0,
+        "locked": true,
+        "muted": false,
+        "elements": [
+          {
+            "elementId": "main_video_0001",
+            "elementType": "main_video",
+            "startMs": 0,
+            "endMs": 30000,
+            "zIndex": 0,
+            "enabled": true,
+            "locked": true,
+            "label": "数字人基础视频",
+            "assetId": "90071992547410003",
+            "sourceDurationMs": 30000,
+            "sourceStartMs": 0,
+            "fitMode": "cover"
+          }
+        ]
+      },
+      {
+        "trackId": "track_primary_audio",
+        "trackType": "primary_audio",
+        "area": "bottom",
+        "order": 0,
+        "locked": true,
+        "muted": false,
+        "elements": [
+          {
+            "elementId": "audio_primary_0001",
+            "elementType": "audio",
+            "startMs": 0,
+            "endMs": 30000,
+            "zIndex": 0,
+            "enabled": true,
+            "locked": true,
+            "label": "主配音",
+            "assetId": "90071992547410004",
+            "usageType": "primary_audio",
+            "sourceDurationMs": 30000,
+            "sourceStartMs": 0,
+            "sourceEndMs": 30000,
+            "volumeRatio": 1,
+            "fade": {
+              "fadeInMs": 0,
+              "fadeOutMs": 0
+            },
+            "loopWhenOverflow": false,
+            "duckingEnabled": false
+          }
+        ]
+      },
+      {
+        "trackId": "track_background_music",
+        "trackType": "background_music",
+        "area": "bottom",
+        "order": 1,
+        "locked": false,
+        "muted": false,
+        "elements": [
+          {
+            "elementId": "audio_bgm_0001",
+            "elementType": "audio",
+            "startMs": 0,
+            "endMs": 30000,
+            "zIndex": 0,
+            "enabled": true,
+            "locked": false,
+            "label": "轻快背景音乐",
+            "assetId": "90071992547410005",
+            "usageType": "background_music",
+            "sourceDurationMs": 12000,
+            "sourceStartMs": 0,
+            "sourceEndMs": 12000,
+            "volumeRatio": 0.3,
+            "fade": {
+              "fadeInMs": 0,
+              "fadeOutMs": 0
+            },
+            "loopWhenOverflow": true,
+            "duckingEnabled": true,
+            "targetGainRatio": 0.35,
+            "attackMs": 120,
+            "releaseMs": 400
+          }
+        ]
+      },
+      {
+        "trackId": "track_sound_effect",
+        "trackType": "sound_effect",
+        "area": "bottom",
+        "order": 2,
+        "locked": false,
+        "muted": false,
+        "elements": [
+          {
+            "elementId": "audio_sfx_0001",
+            "elementType": "audio",
+            "startMs": 5000,
+            "endMs": 6000,
+            "zIndex": 0,
+            "enabled": true,
+            "locked": false,
+            "label": "提示音",
+            "assetId": "90071992547410006",
+            "usageType": "sound_effect",
+            "sourceDurationMs": 1000,
+            "sourceStartMs": 0,
+            "sourceEndMs": 1000,
+            "volumeRatio": 0.8,
+            "fade": {
+              "fadeInMs": 0,
+              "fadeOutMs": 0
+            },
+            "loopWhenOverflow": false,
+            "duckingEnabled": false
+          }
+        ]
+      }
+    ]
+  },
+  "savedAt": "2026-08-08T08:30:00+08:00"
+}

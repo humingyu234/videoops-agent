@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "workflow-form-1",
+  "schemaHash": "sha256:8dbc8a189d1390acccc8188f8817c73714e5e51c125e8436e36df1cf89960bce",
+  "inputs": {
+    "textValue": "产品名称",
+    "textareaValue": "一段创作说明。",
+    "selectValue": "cinematic",
+    "integerValue": 3,
+    "decimalValue": 1.25,
+    "booleanValue": true,
+    "multiSelectValue": ["warm", "clean"],
+    "imageValue": [{ "assetId": "10001" }],
+    "audioValue": [{ "assetId": "10002" }],
+    "videoValue": [{ "assetId": "10003" }],
+    "fileValue": [{ "assetId": "10004" }]
+  }
+}

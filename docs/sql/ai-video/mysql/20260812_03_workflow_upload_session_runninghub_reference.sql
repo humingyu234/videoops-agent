@@ -1,0 +1,8 @@
+-- A discovery workflow input is forwarded to RunningHub and never persisted as a local input-file object.
+SET NAMES utf8mb4;
+
+SET @ddl=IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='av_upload_session' AND column_name='asset_id'),'SELECT 1','ALTER TABLE av_upload_session ADD COLUMN asset_id BIGINT NULL AFTER file_id'); PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+SET @ddl=IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='av_upload_session' AND column_name='original_file_name'),'SELECT 1','ALTER TABLE av_upload_session ADD COLUMN original_file_name VARCHAR(255) NULL AFTER input_key'); PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+SET @ddl=IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='av_upload_session' AND column_name='declared_content_type'),'SELECT 1','ALTER TABLE av_upload_session ADD COLUMN declared_content_type VARCHAR(128) NULL AFTER original_file_name'); PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+SET @ddl=IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='av_upload_session' AND column_name='declared_size_bytes'),'SELECT 1','ALTER TABLE av_upload_session ADD COLUMN declared_size_bytes BIGINT NULL AFTER declared_content_type'); PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+SET @ddl=IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='av_upload_session' AND column_name='runninghub_file_name'),'SELECT 1','ALTER TABLE av_upload_session ADD COLUMN runninghub_file_name VARCHAR(512) NULL AFTER declared_size_bytes'); PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;

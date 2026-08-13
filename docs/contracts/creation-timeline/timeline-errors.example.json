@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "timeline-errors-1",
+  "errors": [
+    {"code": 46601, "stableCode": "CREATION_PROJECT_NOT_FOUND", "safeMessage": "创作项目不存在或无权访问"},
+    {"code": 46602, "stableCode": "CREATION_SOURCE_INVALID", "safeMessage": "创作来源不可用"},
+    {"code": 46603, "stableCode": "TIMELINE_REVISION_CONFLICT", "safeMessage": "时间轴已被更新，请刷新后重试"},
+    {"code": 46604, "stableCode": "TIMELINE_SCHEMA_UNSUPPORTED", "safeMessage": "时间轴版本不受支持"},
+    {"code": 46605, "stableCode": "TIMELINE_DOCUMENT_INVALID", "safeMessage": "时间轴内容不符合规范"},
+    {"code": 46606, "stableCode": "TIMELINE_ASSET_INVALID", "safeMessage": "时间轴素材不可用"},
+    {"code": 46607, "stableCode": "TIMELINE_TEXT_INTEGRITY_FAILED", "safeMessage": "字幕文字完整性校验失败"},
+    {"code": 46608, "stableCode": "TIMELINE_VERSION_NOT_FOUND", "safeMessage": "时间轴版本不存在"},
+    {"code": 46609, "stableCode": "TIMELINE_IDEMPOTENCY_CONFLICT", "safeMessage": "重复请求的内容不一致"},
+    {"code": 46610, "stableCode": "TIMELINE_RENDER_UNAVAILABLE", "safeMessage": "时间轴渲染能力暂不可用"},
+    {"code": 46611, "stableCode": "TIMELINE_FONT_UNAVAILABLE", "safeMessage": "时间轴字体不可用"},
+    {"code": 46612, "stableCode": "CREATION_PROJECT_STATE_CONFLICT", "safeMessage": "创作项目当前状态不允许此操作"}
+  ]
+}

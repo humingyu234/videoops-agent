@@ -1,0 +1,8 @@
+.venv/
+.models/
+.pytest_cache/
+.ruff_cache/
+**/__pycache__/
+.aivideo-whisper-tmp/
+.run/
+.runtime-temp/

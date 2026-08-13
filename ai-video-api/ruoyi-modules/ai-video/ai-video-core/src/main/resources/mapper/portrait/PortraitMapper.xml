@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.dromara.aivideo.portrait.mapper.PortraitMapper">
+
+    <select id="selectOwnedPage" resultType="org.dromara.aivideo.portrait.dto.PortraitPageRowDTO">
+        SELECT p.portrait_id,
+               p.asset_id,
+               p.name,
+               p.gender,
+               p.scene_tags_json,
+               p.note,
+               CASE
+                   WHEN a.status = 'ready' THEN 'ready'
+                   WHEN a.status IN ('verifying', 'delete_pending') THEN 'processing'
+                   ELSE 'failed'
+               END AS availability_status,
+               a.failure_reason,
+               a.original_name AS original_file_name,
+               a.content_type,
+               a.file_format,
+               a.width,
+               a.height,
+               a.file_size,
+               p.record_revision,
+               p.create_time,
+               p.update_time
+        FROM av_portrait p
+        INNER JOIN av_asset a ON a.asset_id = p.asset_id AND a.del_flag = '0'
+        WHERE p.tenant_id = #{tenantId}
+          AND p.workspace_id = #{workspaceId}
+          AND p.owner_id = #{ownerId}
+          AND p.del_flag = '0'
+        <if test="keyword != null and keyword != ''">
+          AND (p.name LIKE CONCAT('%', #{keyword}, '%')
+               OR CAST(p.scene_tags_json AS CHAR) LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="gender != null and gender != ''">
+          AND p.gender = #{gender}
+        </if>
+        <if test="availabilityStatus == 'ready'">
+          AND a.status = 'ready'
+        </if>
+        <if test="availabilityStatus == 'processing'">
+          AND a.status IN ('verifying', 'delete_pending')
+        </if>
+        <if test="availabilityStatus == 'failed'">
+          AND a.status IN ('rejected', 'failed', 'delete_failed')
+        </if>
+        ORDER BY p.create_time DESC
+    </select>
+
+    <select id="selectOwnedIncludingDeleted" resultType="org.dromara.aivideo.portrait.domain.Portrait">
+        SELECT *
+        FROM av_portrait
+        WHERE portrait_id = #{portraitId}
+          AND tenant_id = #{tenantId}
+          AND workspace_id = #{workspaceId}
+          AND owner_id = #{ownerId}
+        LIMIT 1
+    </select>
+</mapper>

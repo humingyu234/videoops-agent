@@ -1,0 +1,18 @@
+{
+  "escaped": [
+    {
+      "input": "{\\p1}literal\\N\\n\\h",
+      "expected": "\\{\\\\p1\\}literal\\\\N\\\\n\\\\h"
+    },
+    {
+      "input": "Café 😀 {彩色}",
+      "expected": "Café 😀 \\{彩色\\}"
+    }
+  ],
+  "rejected": [
+    "line\nnext",
+    "nul\u0000byte",
+    "c1\u0085control",
+    "bidi\u202Eoverride"
+  ]
+}

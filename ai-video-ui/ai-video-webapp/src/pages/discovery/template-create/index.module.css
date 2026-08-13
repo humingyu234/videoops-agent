@@ -1,0 +1,54 @@
+.page {
+  margin: 0 auto;
+  max-width: 880px;
+  padding: 28px 24px 56px;
+}
+.fullWidth {
+  width: 100%;
+}
+.assetUpload :global(.ant-upload-list) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  width: 100%;
+}
+.assetUpload :global(.ant-upload-list-item-container) {
+  flex: 0 0 112px;
+  width: 112px;
+  height: 112px;
+}
+.assetUpload :global(.ant-upload-select) {
+  width: 112px;
+  height: 112px;
+}
+.uploadTrigger {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  padding: 8px;
+  color: #62626c;
+  text-align: center;
+}
+.uploadTrigger > span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+button.runButton.runButton,
+button.runButton.runButton:hover,
+button.runButton.runButton:focus-visible {
+  height: 50px;
+  border-color: #19191d;
+  border-radius: 13px;
+  background: #19191d;
+  box-shadow: none;
+  color: #fff;
+}

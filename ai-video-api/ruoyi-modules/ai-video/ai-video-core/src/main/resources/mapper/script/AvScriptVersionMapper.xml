@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.dromara.aivideo.script.mapper.AvScriptVersionMapper">
+    <select id="selectOwned" resultType="org.dromara.aivideo.script.domain.AvScriptVersion">
+        SELECT * FROM av_script_version
+        WHERE script_id = #{scriptId} AND id = #{versionId} AND tenant_id = #{tenantId}
+          AND owner_type = 'personal' AND owner_id = #{ownerId} LIMIT 1
+    </select>
+
+    <select id="selectByManualIntent" resultType="org.dromara.aivideo.script.domain.AvScriptVersion">
+        SELECT * FROM av_script_version
+        WHERE script_id = #{scriptId} AND tenant_id = #{tenantId} AND owner_type = 'personal'
+          AND owner_id = #{ownerId} AND manual_idempotency_key = #{idempotencyKey} LIMIT 1 FOR UPDATE
+    </select>
+
+    <select id="selectSummaries" resultType="org.dromara.aivideo.script.dto.ScriptVersionSummaryDTO">
+        SELECT CAST(id AS CHAR) AS version_id, CAST(parent_version_id AS CHAR) AS parent_version_id,
+               version_no, source_type, effective_character_count, estimated_duration_seconds,
+               CASE WHEN CHAR_LENGTH(script_text) &gt; 120
+                    THEN CONCAT(LEFT(script_text, 120), '…') ELSE script_text END AS preview,
+               created_at
+        FROM av_script_version
+        WHERE script_id = #{scriptId} AND tenant_id = #{tenantId}
+          AND owner_type = 'personal' AND owner_id = #{ownerId}
+        ORDER BY version_no DESC, id DESC
+    </select>
+</mapper>

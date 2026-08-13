@@ -1,0 +1,40 @@
+-- 运营端知识库菜单与权限；固定编号并使用 upsert 保证重复执行幂等。
+INSERT INTO sys_menu (
+    menu_id, menu_name, parent_id, order_num, path, component, is_frame, is_cache,
+    menu_type, visible, status, perms, icon, create_dept, create_by, create_time,
+    update_by, update_time, remark
+) VALUES
+    (1761400000000020100, '知识库管理', 1761400000000020000, 7, 'knowledge', 'aivideo/knowledge/index',
+     'N', 'Y', 'C', '0', '0', 'aivideo:knowledge:query', 'book',
+     1761000000000000103, 1761100000000000001, NOW(), 1761100000000000001, NOW(), 'AI 视频知识库管理'),
+    (1761400000000020101, '知识库查询', 1761400000000020100, 1, '#', '',
+     'N', 'Y', 'F', '0', '0', 'aivideo:knowledge:query', '#',
+     1761000000000000103, 1761100000000000001, NOW(), 1761100000000000001, NOW(), ''),
+    (1761400000000020102, '知识库导入', 1761400000000020100, 2, '#', '',
+     'N', 'Y', 'F', '0', '0', 'aivideo:knowledge:import', '#',
+     1761000000000000103, 1761100000000000001, NOW(), 1761100000000000001, NOW(), ''),
+    (1761400000000020103, '知识库新增', 1761400000000020100, 3, '#', '',
+     'N', 'Y', 'F', '0', '0', 'aivideo:knowledge:add', '#',
+     1761000000000000103, 1761100000000000001, NOW(), 1761100000000000001, NOW(), ''),
+    (1761400000000020104, '知识库修改', 1761400000000020100, 4, '#', '',
+     'N', 'Y', 'F', '0', '0', 'aivideo:knowledge:edit', '#',
+     1761000000000000103, 1761100000000000001, NOW(), 1761100000000000001, NOW(), ''),
+    (1761400000000020105, '知识库删除', 1761400000000020100, 5, '#', '',
+     'N', 'Y', 'F', '0', '0', 'aivideo:knowledge:remove', '#',
+     1761000000000000103, 1761100000000000001, NOW(), 1761100000000000001, NOW(), '')
+ON DUPLICATE KEY UPDATE
+    menu_name = VALUES(menu_name),
+    parent_id = VALUES(parent_id),
+    order_num = VALUES(order_num),
+    path = VALUES(path),
+    component = VALUES(component),
+    is_frame = VALUES(is_frame),
+    is_cache = VALUES(is_cache),
+    menu_type = VALUES(menu_type),
+    visible = VALUES(visible),
+    status = VALUES(status),
+    perms = VALUES(perms),
+    icon = VALUES(icon),
+    update_by = VALUES(update_by),
+    update_time = VALUES(update_time),
+    remark = VALUES(remark);

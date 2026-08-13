@@ -1,0 +1,36 @@
+appId: com.suzao.aivideo
+productName: 素造智能体
+asar: true
+npmRebuild: false
+publish: null
+
+directories:
+  buildResources: resources/icons
+  output: release
+
+files:
+  - dist/**/*
+  - package.json
+
+win:
+  icon: resources/icons/icon.ico
+  artifactName: ${productName}-${version}-windows-${arch}-setup.${ext}
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  allowToChangeInstallationDirectory: true
+  oneClick: false
+  perMachine: false
+
+mac:
+  icon: resources/icons/icon.icns
+  identity: null
+  artifactName: ${productName}-${version}-macos-${arch}.${ext}
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64

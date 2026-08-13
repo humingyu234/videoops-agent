@@ -1,0 +1,106 @@
+######################################################################
+# Build Tools
+
+.gradle
+/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+######################################################################
+# IDE
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### VS CODE ###
+.vscode
+
+### JRebel ###
+rebel.xml
+
+### NetBeans ###
+nbproject/private/
+build/*
+nbbuild/
+nbdist/
+.nb-gradle/
+
+######################################################################
+# Others
+*.log
+*.log.gz
+*.xml.versionsBackup
+*.swp
+
+!*/build/*.java
+!*/build/*.html
+!*/build/*.xml
+
+.flattened-pom.xml
+
+application-local.yml
+application-ga.yml
+
+######################################################################
+node_modules
+dist
+.umi
+.umi-production
+src/.umi
+src/.umi-production
+.env.local
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+secrets/
+*.log
+.idea/
+*.iml
+
+######################################################################
+./agents
+./claude
+./codex
+.worktrees/
+
+# 首页视觉验收临时产物（截图、对比页、笔记），仅本地保留
+ai-video-ui/ai-video-webapp/tmp/
+
+# Local tooling caches and session artifacts
+/.m2/
+/.codex/tmp/
+.pnpm-store/
+.agents/
+.superpowers/
+.tmp/
+.runtime/
+/.local/
+
+# Electron desktop build output and local signing material
+/ai-video-desktop/node_modules/
+/ai-video-desktop/dist/
+/ai-video-desktop/release/
+/ai-video-desktop/*.tgz
+/ai-video-desktop/*.p12
+/ai-video-desktop/*.pfx
+/ai-video-desktop/*.cer
+/ai-video-desktop/*.provisionprofile

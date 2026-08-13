@@ -1,0 +1,94 @@
+{
+  "$id": "https://ai-video.local/contracts/discovery-runninghub/workflow-form-1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "inputs": {
+      "additionalProperties": false,
+      "properties": {
+        "audioValue": { "$ref": "#/$defs/assetArray" },
+        "booleanValue": { "type": "boolean" },
+        "decimalValue": { "type": "number", "minimum": 0, "maximum": 10 },
+        "fileValue": { "$ref": "#/$defs/assetArray" },
+        "imageValue": { "$ref": "#/$defs/assetArray" },
+        "integerValue": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "multiSelectValue": {
+          "items": { "type": "string" },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "selectValue": { "type": "string" },
+        "textValue": { "type": "string" },
+        "textareaValue": { "type": "string" },
+        "videoValue": { "$ref": "#/$defs/assetArray" }
+      },
+      "required": [
+        "textValue",
+        "textareaValue",
+        "selectValue",
+        "integerValue",
+        "decimalValue",
+        "booleanValue",
+        "multiSelectValue",
+        "imageValue",
+        "audioValue",
+        "videoValue",
+        "fileValue"
+      ],
+      "type": "object"
+    },
+    "schemaHash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "schemaVersion": { "const": "workflow-form-1" }
+  },
+  "required": ["schemaVersion", "schemaHash", "inputs"],
+  "type": "object",
+  "x-ai-video-form-fields": [
+    { "inputKey": "textValue", "controlType": "text", "valueType": "string", "required": true, "maxLength": 120, "label": "产品名称 \"示例\"" },
+    { "inputKey": "textareaValue", "controlType": "textarea", "valueType": "string", "required": true, "maxLength": 2000, "label": "创作说明\n（Unicode）" },
+    { "inputKey": "selectValue", "controlType": "select", "valueType": "string", "required": true },
+    { "inputKey": "integerValue", "controlType": "integer", "valueType": "integer", "required": true, "minimum": 0, "maximum": 9007199254740991 },
+    { "inputKey": "decimalValue", "controlType": "decimal", "valueType": "decimal", "required": true, "minimum": 0, "maximum": 10 },
+    { "inputKey": "booleanValue", "controlType": "boolean", "valueType": "boolean", "required": true },
+    { "inputKey": "multiSelectValue", "controlType": "multi_select", "valueType": "string_array", "required": true, "uniqueItems": true },
+    { "inputKey": "imageValue", "controlType": "image", "valueType": "asset_array", "required": true, "maxItems": 1 },
+    { "inputKey": "audioValue", "controlType": "audio", "valueType": "asset_array", "required": true, "maxItems": 1 },
+    { "inputKey": "videoValue", "controlType": "video", "valueType": "asset_array", "required": true, "maxItems": 1 },
+    { "inputKey": "fileValue", "controlType": "file", "valueType": "asset_array", "required": true, "maxItems": 1 }
+  ],
+  "x-ai-video-control-value-types": {
+    "audio": "asset_array",
+    "boolean": "boolean",
+    "decimal": "decimal",
+    "file": "asset_array",
+    "image": "asset_array",
+    "integer": "integer",
+    "multi_select": "string_array",
+    "select": "string",
+    "text": "string",
+    "textarea": "string",
+    "video": "asset_array"
+  },
+  "x-ai-video-numeric-wire": {
+    "decimal": "JSON number without exponent notation",
+    "integer": "JSON integer without exponent notation"
+  },
+  "$defs": {
+    "assetArray": {
+      "items": {
+        "additionalProperties": false,
+        "properties": { "assetId": { "type": "string" } },
+        "required": ["assetId"],
+        "type": "object"
+      },
+      "maxItems": 1,
+      "type": "array"
+    }
+  }
+}

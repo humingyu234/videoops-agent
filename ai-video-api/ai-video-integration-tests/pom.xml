@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>org.dromara</groupId>
+        <artifactId>ruoyi-vue-plus</artifactId>
+        <version>${revision}</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>ai-video-integration-tests</artifactId>
+    <packaging>jar</packaging>
+
+    <name>AI Video 外部启动器集成测试</name>
+    <description>P0-A 测试专用：通过外部进程启动两个 starter 的 HTTP 集成测试</description>
+
+    <properties>
+        <it.external.http.skip>true</it.external.http.skip>
+        <it.starter.jar.directory>${project.build.directory}/starter-jars</it.starter.jar.directory>
+        <it.api.root>${project.basedir}/..</it.api.root>
+        <it.user.starter.jar>${project.basedir}/../ai-video-user-api/target-http-it/ai-video-user-api-http-it.jar</it.user.starter.jar>
+        <it.platform.starter.jar>${project.basedir}/../ruoyi-admin/target-http-it/ruoyi-admin-http-it.jar</it.platform.starter.jar>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ai-video-core</artifactId>
+            <version>${revision}</version>
+            <classifier>tests</classifier>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jdbc</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-common-satoken</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-crypto</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <!-- 普通构建不执行外部进程或 HTTP 集成测试。 -->
+                    <skipITs>${it.external.http.skip}</skipITs>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>external-http-it</id>
+            <properties>
+                <!-- 覆盖父 POM 的默认跳过设置，仅此测试模块强制编译并执行集成测试。 -->
+                <maven.test.skip>false</maven.test.skip>
+                <skipTests>false</skipTests>
+                <skipITs>false</skipITs>
+                <it.external.http.skip>false</it.external.http.skip>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <!-- 插件依赖只建立 reactor（Maven 模块构建）顺序，不将 starter jar 放入测试 JVM 类路径。 -->
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.dromara</groupId>
+                                <artifactId>ai-video-user-api</artifactId>
+                                <version>${revision}</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.dromara</groupId>
+                                <artifactId>ruoyi-admin</artifactId>
+                                <version>${revision}</version>
+                            </dependency>
+                        </dependencies>
+                        <executions>
+                            <execution>
+                                <id>fail-on-skipped-external-http-it</id>
+                                <phase>validate</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <!-- CLI 用户属性优先于 profile；显式拒绝它们，避免测试被静默跳过。 -->
+                                        <condition property="external.http.it.skip.requested">
+                                            <or>
+                                                <equals arg1="${maven.test.skip}" arg2="true" casesensitive="false"/>
+                                                <equals arg1="${maven.test.skip.exec}" arg2="true" casesensitive="false"/>
+                                                <equals arg1="${skipTests}" arg2="true" casesensitive="false"/>
+                                                <equals arg1="${skipITs}" arg2="true" casesensitive="false"/>
+                                                <equals arg1="${it.external.http.skip}" arg2="true" casesensitive="false"/>
+                                                <equals arg1="${maven.test.failure.ignore}" arg2="true" casesensitive="false"/>
+                                            </or>
+                                        </condition>
+                                        <fail if="external.http.it.skip.requested"
+                                              message="external-http-it 禁止跳过或忽略集成测试失败；请移除 maven.test.skip、maven.test.skip.exec、skipTests、skipITs、it.external.http.skip 或 maven.test.failure.ignore 的 true 设置。"/>
+                                    </target>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>copy-external-starter-jars</id>
+                                <phase>process-test-resources</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <mkdir dir="${it.starter.jar.directory}"/>
+                                        <copy file="${it.user.starter.jar}"
+                                              tofile="${it.starter.jar.directory}/ai-video-user-api.jar"
+                                              overwrite="true"/>
+                                        <copy file="${it.platform.starter.jar}"
+                                              tofile="${it.starter.jar.directory}/ruoyi-admin.jar"
+                                              overwrite="true"/>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <skip>false</skip>
+                            <skipTests>false</skipTests>
+                            <skipITs>false</skipITs>
+                            <failIfNoTests>true</failIfNoTests>
+                            <failIfNoSpecifiedTests>true</failIfNoSpecifiedTests>
+                            <systemPropertyVariables>
+                                <aivideo.local-integration-test>${aivideo.local-integration-test}</aivideo.local-integration-test>
+                                <it.starter.jar.directory>${it.starter.jar.directory}</it.starter.jar.directory>
+                                <it.api.root>${it.api.root}</it.api.root>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

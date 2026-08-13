@@ -1,0 +1,656 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aivideo:creation-timeline:timeline-1",
+  "title": "AI Video Creation Timeline timeline-1",
+  "x-ai-video-limits": {
+    "canonicalJsonMaxBytes": 1048576,
+    "maxNestingDepth": 16,
+    "minTrackCount": 1,
+    "maxTrackCount": 32,
+    "maxElementsPerTrack": 512,
+    "maxTotalElements": 2000,
+    "maxDistinctAssets": 256,
+    "maxAssetReferences": 2000,
+    "minDurationMs": 1,
+    "maxDurationMs": 120000,
+    "canvasWidth": 1080,
+    "canvasHeight": 1920,
+    "canvasFrameRate": 30,
+    "safeMarginRatio": 0.05,
+    "maxKeyAsciiLength": 64,
+    "maxLabelCodePoints": 128,
+    "maxSubtitleCodePoints": 512,
+    "maxFancyTextCodePoints": 128,
+    "maxProjectScriptCodePoints": 50000,
+    "maxAiSuggestions": 20,
+    "maxAiPromptCodePoints": 2048,
+    "maxAiReasonCodePoints": 256,
+    "maxAiTags": 16,
+    "maxAiTagCodePoints": 32,
+    "maxNormalizationChanges": 256,
+    "maxTaskRequestBytes": 65536,
+    "maxTaskResultBytes": 65536,
+    "maxSafetySummaryCodePoints": 512,
+    "maxImageBytes": 20971520,
+    "maxImageWidth": 8192,
+    "maxImageHeight": 8192,
+    "maxVideoBytes": 1073741824,
+    "maxVideoDurationMs": 120000,
+    "maxVideoWidth": 3840,
+    "maxVideoHeight": 2160,
+    "maxVideoFrameRate": 60,
+    "maxAudioBytes": 268435456,
+    "maxAudioDurationMs": 120000,
+    "maxAudioSampleRateHz": 192000,
+    "maxAudioChannels": 8,
+    "outputFrameRate": 30,
+    "standardCrf": 23,
+    "highCrf": 18,
+    "defaultFadeInMs": 0,
+    "defaultFadeOutMs": 0,
+    "defaultSourceStartMs": 0,
+    "defaultBackgroundMusicVolumeRatio": 0.3,
+    "defaultDuckingTargetGainRatio": 0.35,
+    "defaultDuckingAttackMs": 120,
+    "defaultDuckingReleaseMs": 400,
+    "minEffectDurationMs": 100,
+    "maxEffectDurationMs": 3000,
+    "minZoomScale": 1,
+    "maxZoomScale": 1.2,
+    "minBlurRadius": 0.5,
+    "maxBlurRadius": 12,
+    "maxDecimalPlaces": 4,
+    "minSourceDurationMs": 1,
+    "minRatio": 0,
+    "maxRatio": 1,
+    "minRotationDegrees": -180,
+    "maxRotationDegrees": 180,
+    "minZIndex": 0,
+    "maxZIndex": 999,
+    "minFontSizePx": 12,
+    "maxFontSizePx": 120,
+    "minOutlineWidthPx": 0,
+    "maxOutlineWidthPx": 8,
+    "fontWeight": 400,
+    "registeredFontCount": 2
+  },
+  "x-ai-video-whitelists": {
+    "fancyTextTemplates": [
+      "keyword_pop",
+      "gold_impact",
+      "neon_breathe",
+      "handwriting_reveal",
+      "bubble_bounce",
+      "title_wipe"
+    ],
+    "subtitleAlignments": ["left", "center", "right"],
+    "safeAreaAnchors": ["upper", "center", "lower"],
+    "animationIntensities": ["subtle", "normal", "strong"],
+    "aiImageStyles": ["photorealistic", "cinematic", "illustration", "minimal"],
+    "fontCodes": ["noto_sans_cjk_sc_regular", "noto_serif_cjk_sc_regular"]
+  },
+  "x-ai-video-media-policy": {
+    "image": {
+      "contentTypes": ["image/jpeg", "image/png", "image/webp"],
+      "maxBytes": 20971520,
+      "maxWidth": 8192,
+      "maxHeight": 8192
+    },
+    "video": {
+      "contentTypes": ["video/mp4", "video/quicktime", "video/webm"],
+      "maxBytes": 1073741824,
+      "maxDurationMs": 120000,
+      "maxWidth": 3840,
+      "maxHeight": 2160,
+      "maxFrameRate": 60
+    },
+    "audio": {
+      "contentTypes": ["audio/mpeg", "audio/wav", "audio/mp4", "audio/aac"],
+      "maxBytes": 268435456,
+      "maxDurationMs": 120000,
+      "maxSampleRateHz": 192000,
+      "maxChannels": 8
+    }
+  },
+  "x-ai-video-output-encoding": {
+    "container": "mp4",
+    "videoCodec": "h264",
+    "pixelFormat": "yuv420p",
+    "audioCodec": "aac",
+    "standard": {"crf": 23, "preset": "medium"},
+    "high": {"crf": 18, "preset": "slow"}
+  },
+  "x-ai-video-semantics": {
+    "trackOrder": {
+      "top": ["fancy_text", "subtitle", "visual_effect", "image_overlay", "pip_video"],
+      "center": ["main_video"],
+      "bottom": ["primary_audio", "background_music", "sound_effect"]
+    },
+    "cropOrder": "crop_then_fit",
+    "pipLoopFormula": "sourceStartMs + (localMs mod (sourceDurationMs - sourceStartMs))",
+    "backgroundDuckingTrigger": "primary_audio_only",
+    "backgroundDuckingFormula": "volumeRatio * targetGainRatio",
+    "fontRegistryVersion": "timeline-fonts-1",
+    "canonicalNumberRule": "plain_decimal_max_4_places_without_insignificant_trailing_zero",
+    "serviceChecks": [
+      "total_elements_at_most_2000",
+      "element_ids_unique_in_document",
+      "track_ids_unique_in_document",
+      "start_before_end_within_canvas",
+      "crop_right_and_bottom_not_greater_than_1",
+      "fade_sum_not_greater_than_element_duration",
+      "source_ranges_match_server_probe"
+    ]
+  },
+  "type": "object",
+  "required": ["schemaVersion", "canvas", "tracks"],
+  "properties": {
+    "schemaVersion": {"const": "timeline-1"},
+    "canvas": {"$ref": "#/$defs/canvas"},
+    "tracks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {"$ref": "#/$defs/track"},
+      "contains": {
+        "type": "object",
+        "required": ["trackType"],
+        "properties": {"trackType": {"const": "main_video"}}
+      },
+      "minContains": 1,
+      "maxContains": 1
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "canvas": {
+      "type": "object",
+      "required": ["width", "height", "frameRate", "durationMs", "safeMarginRatio"],
+      "properties": {
+        "width": {"const": 1080},
+        "height": {"const": 1920},
+        "frameRate": {"const": 30},
+        "durationMs": {"type": "integer", "minimum": 1, "maximum": 120000},
+        "safeMarginRatio": {"const": 0.05}
+      },
+      "additionalProperties": false
+    },
+    "key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "decimalId": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "ratio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "multipleOf": 0.0001
+    },
+    "positiveRatio": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "multipleOf": 0.0001
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-F]{8}$"
+    },
+    "elementId": {"$ref": "#/$defs/key"},
+    "startMs": {"type": "integer", "minimum": 0, "maximum": 119999},
+    "endMs": {"type": "integer", "minimum": 1, "maximum": 120000},
+    "zIndex": {"type": "integer", "minimum": 0, "maximum": 999},
+    "transform": {
+      "type": "object",
+      "required": ["xRatio", "yRatio", "widthRatio", "heightRatio", "rotationDeg", "opacity"],
+      "properties": {
+        "xRatio": {"$ref": "#/$defs/ratio"},
+        "yRatio": {"$ref": "#/$defs/ratio"},
+        "widthRatio": {"$ref": "#/$defs/positiveRatio"},
+        "heightRatio": {"$ref": "#/$defs/positiveRatio"},
+        "rotationDeg": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180,
+          "multipleOf": 0.0001
+        },
+        "opacity": {"$ref": "#/$defs/ratio"}
+      },
+      "additionalProperties": false
+    },
+    "crop": {
+      "type": "object",
+      "required": ["xRatio", "yRatio", "widthRatio", "heightRatio"],
+      "properties": {
+        "xRatio": {"type": "number", "minimum": 0, "exclusiveMaximum": 1, "multipleOf": 0.0001},
+        "yRatio": {"type": "number", "minimum": 0, "exclusiveMaximum": 1, "multipleOf": 0.0001},
+        "widthRatio": {"$ref": "#/$defs/positiveRatio"},
+        "heightRatio": {"$ref": "#/$defs/positiveRatio"}
+      },
+      "additionalProperties": false
+    },
+    "fade": {
+      "type": "object",
+      "required": ["fadeInMs", "fadeOutMs"],
+      "properties": {
+        "fadeInMs": {"type": "integer", "minimum": 0, "maximum": 120000},
+        "fadeOutMs": {"type": "integer", "minimum": 0, "maximum": 120000}
+      },
+      "additionalProperties": false
+    },
+    "mainVideoElement": {
+      "type": "object",
+      "required": [
+        "elementId", "elementType", "startMs", "endMs", "zIndex", "enabled", "locked", "label",
+        "assetId", "sourceDurationMs", "sourceStartMs", "fitMode"
+      ],
+      "properties": {
+        "elementId": {"$ref": "#/$defs/elementId"},
+        "elementType": {"const": "main_video"},
+        "startMs": {"$ref": "#/$defs/startMs"},
+        "endMs": {"$ref": "#/$defs/endMs"},
+        "zIndex": {"const": 0},
+        "enabled": {"const": true},
+        "locked": {"const": true},
+        "label": {"$ref": "#/$defs/label"},
+        "assetId": {"$ref": "#/$defs/decimalId"},
+        "sourceDurationMs": {"type": "integer", "minimum": 1, "maximum": 120000},
+        "sourceStartMs": {"type": "integer", "minimum": 0, "maximum": 119999},
+        "fitMode": {"enum": ["contain", "cover"]}
+      },
+      "additionalProperties": false
+    },
+    "imageElement": {
+      "type": "object",
+      "required": [
+        "elementId", "elementType", "startMs", "endMs", "zIndex", "enabled", "locked", "label",
+        "assetId", "transform", "fitMode", "crop", "fade", "sourceStartOffset", "sourceEndOffset",
+        "adoptedPrompt", "sourceTaskId"
+      ],
+      "properties": {
+        "elementId": {"$ref": "#/$defs/elementId"},
+        "elementType": {"const": "image_overlay"},
+        "startMs": {"$ref": "#/$defs/startMs"},
+        "endMs": {"$ref": "#/$defs/endMs"},
+        "zIndex": {"$ref": "#/$defs/zIndex"},
+        "enabled": {"type": "boolean"},
+        "locked": {"type": "boolean"},
+        "label": {"$ref": "#/$defs/label"},
+        "assetId": {"$ref": "#/$defs/decimalId"},
+        "transform": {"$ref": "#/$defs/transform"},
+        "fitMode": {"enum": ["contain", "cover"]},
+        "crop": {"$ref": "#/$defs/crop"},
+        "fade": {"$ref": "#/$defs/fade"},
+        "sourceStartOffset": {"type": "integer", "minimum": 0, "maximum": 50000},
+        "sourceEndOffset": {"type": "integer", "minimum": 0, "maximum": 50000},
+        "adoptedPrompt": {"type": ["string", "null"], "maxLength": 2048},
+        "sourceTaskId": {"type": ["string", "null"], "pattern": "^[1-9][0-9]*$"}
+      },
+      "additionalProperties": false
+    },
+    "pipVideoElement": {
+      "type": "object",
+      "required": [
+        "elementId", "elementType", "startMs", "endMs", "zIndex", "enabled", "locked", "label",
+        "assetId", "transform", "fitMode", "crop", "fade", "sourceDurationMs", "sourceStartMs",
+        "loopWhenOverflow", "audioEnabled"
+      ],
+      "properties": {
+        "elementId": {"$ref": "#/$defs/elementId"},
+        "elementType": {"const": "pip_video"},
+        "startMs": {"$ref": "#/$defs/startMs"},
+        "endMs": {"$ref": "#/$defs/endMs"},
+        "zIndex": {"$ref": "#/$defs/zIndex"},
+        "enabled": {"type": "boolean"},
+        "locked": {"type": "boolean"},
+        "label": {"$ref": "#/$defs/label"},
+        "assetId": {"$ref": "#/$defs/decimalId"},
+        "transform": {"$ref": "#/$defs/transform"},
+        "fitMode": {"enum": ["contain", "cover"]},
+        "crop": {"$ref": "#/$defs/crop"},
+        "fade": {"$ref": "#/$defs/fade"},
+        "sourceDurationMs": {"type": "integer", "minimum": 1, "maximum": 120000},
+        "sourceStartMs": {"type": "integer", "minimum": 0, "maximum": 119999},
+        "loopWhenOverflow": {"const": true},
+        "audioEnabled": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "subtitleElement": {
+      "type": "object",
+      "required": [
+        "elementId", "elementType", "startMs", "endMs", "zIndex", "enabled", "locked", "label",
+        "sourceTextSnapshot", "displayText", "sourceStartOffset", "sourceEndOffset", "fontCode", "fontVersion",
+        "fontSha256", "fontSizePx", "color", "backgroundEnabled", "outlineEnabled", "outlineWidthPx",
+        "safeAreaAnchor", "alignment"
+      ],
+      "properties": {
+        "elementId": {"$ref": "#/$defs/elementId"},
+        "elementType": {"const": "subtitle"},
+        "startMs": {"$ref": "#/$defs/startMs"},
+        "endMs": {"$ref": "#/$defs/endMs"},
+        "zIndex": {"$ref": "#/$defs/zIndex"},
+        "enabled": {"type": "boolean"},
+        "locked": {"type": "boolean"},
+        "label": {"$ref": "#/$defs/label"},
+        "sourceTextSnapshot": {"type": "string", "minLength": 1, "maxLength": 512},
+        "displayText": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\s，。！？；：、,.!?;:\\-—…（）()【】\\[\\]{}]+$"
+        },
+        "sourceStartOffset": {"type": "integer", "minimum": 0, "maximum": 50000},
+        "sourceEndOffset": {"type": "integer", "minimum": 1, "maximum": 50000},
+        "fontCode": {"enum": ["noto_sans_cjk_sc_regular", "noto_serif_cjk_sc_regular"]},
+        "fontVersion": {"type": "string", "pattern": "^[0-9]+\\.[0-9]{3}$"},
+        "fontSha256": {"$ref": "#/$defs/sha256"},
+        "fontSizePx": {"type": "integer", "minimum": 12, "maximum": 120},
+        "color": {"$ref": "#/$defs/color"},
+        "backgroundEnabled": {"type": "boolean"},
+        "backgroundColor": {"$ref": "#/$defs/color"},
+        "outlineEnabled": {"type": "boolean"},
+        "outlineColor": {"$ref": "#/$defs/color"},
+        "outlineWidthPx": {"type": "integer", "minimum": 0, "maximum": 8},
+        "safeAreaAnchor": {"enum": ["upper", "center", "lower"]},
+        "alignment": {"enum": ["left", "center", "right"]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"backgroundEnabled": {"const": true}}},
+          "then": {"required": ["backgroundColor"]},
+          "else": {"not": {"required": ["backgroundColor"]}}
+        },
+        {
+          "if": {"properties": {"outlineEnabled": {"const": true}}},
+          "then": {"required": ["outlineColor"]},
+          "else": {"not": {"required": ["outlineColor"]}}
+        }
+      ],
+      "additionalProperties": false
+    },
+    "fancyTextElement": {
+      "type": "object",
+      "required": [
+        "elementId", "elementType", "startMs", "endMs", "zIndex", "enabled", "locked", "label",
+        "text", "templateCode", "fontCode", "fontVersion", "fontSha256", "color", "accentColor",
+        "transform", "animationIntensity", "enterDurationMs", "exitDurationMs", "suggestionTaskId",
+        "suggestionReason"
+      ],
+      "properties": {
+        "elementId": {"$ref": "#/$defs/elementId"},
+        "elementType": {"const": "fancy_text"},
+        "startMs": {"$ref": "#/$defs/startMs"},
+        "endMs": {"$ref": "#/$defs/endMs"},
+        "zIndex": {"$ref": "#/$defs/zIndex"},
+        "enabled": {"type": "boolean"},
+        "locked": {"type": "boolean"},
+        "label": {"$ref": "#/$defs/label"},
+        "text": {"type": "string", "minLength": 1, "maxLength": 128},
+        "templateCode": {
+          "enum": [
+            "keyword_pop", "gold_impact", "neon_breathe", "handwriting_reveal", "bubble_bounce", "title_wipe"
+          ]
+        },
+        "fontCode": {"enum": ["noto_sans_cjk_sc_regular", "noto_serif_cjk_sc_regular"]},
+        "fontVersion": {"type": "string", "pattern": "^[0-9]+\\.[0-9]{3}$"},
+        "fontSha256": {"$ref": "#/$defs/sha256"},
+        "color": {"$ref": "#/$defs/color"},
+        "accentColor": {"$ref": "#/$defs/color"},
+        "transform": {"$ref": "#/$defs/transform"},
+        "animationIntensity": {"enum": ["subtle", "normal", "strong"]},
+        "enterDurationMs": {"type": "integer", "minimum": 0, "maximum": 3000},
+        "exitDurationMs": {"type": "integer", "minimum": 0, "maximum": 3000},
+        "suggestionTaskId": {"type": ["string", "null"], "pattern": "^[1-9][0-9]*$"},
+        "suggestionReason": {"type": ["string", "null"], "maxLength": 256}
+      },
+      "additionalProperties": false
+    },
+    "audioElement": {
+      "type": "object",
+      "required": [
+        "elementId", "elementType", "startMs", "endMs", "zIndex", "enabled", "locked", "label",
+        "assetId", "usageType", "sourceDurationMs", "sourceStartMs", "sourceEndMs", "volumeRatio", "fade",
+        "loopWhenOverflow", "duckingEnabled"
+      ],
+      "properties": {
+        "elementId": {"$ref": "#/$defs/elementId"},
+        "elementType": {"const": "audio"},
+        "startMs": {"$ref": "#/$defs/startMs"},
+        "endMs": {"$ref": "#/$defs/endMs"},
+        "zIndex": {"$ref": "#/$defs/zIndex"},
+        "enabled": {"type": "boolean"},
+        "locked": {"type": "boolean"},
+        "label": {"$ref": "#/$defs/label"},
+        "assetId": {"$ref": "#/$defs/decimalId"},
+        "usageType": {"enum": ["primary_audio", "background_music", "sound_effect"]},
+        "sourceDurationMs": {"type": "integer", "minimum": 1, "maximum": 120000},
+        "sourceStartMs": {"type": "integer", "minimum": 0, "maximum": 119999},
+        "sourceEndMs": {"type": "integer", "minimum": 1, "maximum": 120000},
+        "volumeRatio": {"$ref": "#/$defs/ratio"},
+        "fade": {"$ref": "#/$defs/fade"},
+        "loopWhenOverflow": {"type": "boolean"},
+        "duckingEnabled": {"type": "boolean"},
+        "targetGainRatio": {"$ref": "#/$defs/ratio"},
+        "attackMs": {"type": "integer", "minimum": 0, "maximum": 3000},
+        "releaseMs": {"type": "integer", "minimum": 0, "maximum": 3000}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"usageType": {"const": "background_music"}}},
+          "then": {
+            "required": ["targetGainRatio", "attackMs", "releaseMs"],
+            "properties": {
+              "volumeRatio": {"const": 0.3},
+              "loopWhenOverflow": {"const": true},
+              "duckingEnabled": {"const": true},
+              "targetGainRatio": {"const": 0.35},
+              "attackMs": {"const": 120},
+              "releaseMs": {"const": 400}
+            }
+          },
+          "else": {
+            "properties": {
+              "loopWhenOverflow": {"const": false},
+              "duckingEnabled": {"const": false}
+            },
+            "not": {
+              "anyOf": [
+                {"required": ["targetGainRatio"]},
+                {"required": ["attackMs"]},
+                {"required": ["releaseMs"]}
+              ]
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "visualEffectElement": {
+      "type": "object",
+      "required": [
+        "elementId", "elementType", "startMs", "endMs", "zIndex", "enabled", "locked", "label",
+        "effectCode", "durationMs", "scale", "radius"
+      ],
+      "properties": {
+        "elementId": {"$ref": "#/$defs/elementId"},
+        "elementType": {"const": "visual_effect"},
+        "startMs": {"$ref": "#/$defs/startMs"},
+        "endMs": {"$ref": "#/$defs/endMs"},
+        "zIndex": {"$ref": "#/$defs/zIndex"},
+        "enabled": {"type": "boolean"},
+        "locked": {"type": "boolean"},
+        "label": {"$ref": "#/$defs/label"},
+        "effectCode": {"enum": ["fade_in", "fade_out", "gentle_zoom_in", "gentle_zoom_out", "light_blur"]},
+        "durationMs": {"type": "integer", "minimum": 100, "maximum": 3000},
+        "scale": {"type": ["number", "null"], "minimum": 1, "maximum": 1.2, "multipleOf": 0.0001},
+        "radius": {"type": ["number", "null"], "minimum": 0.5, "maximum": 12, "multipleOf": 0.0001}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"effectCode": {"enum": ["fade_in", "fade_out"]}}},
+          "then": {"properties": {"scale": {"const": null}, "radius": {"const": null}}}
+        },
+        {
+          "if": {"properties": {"effectCode": {"enum": ["gentle_zoom_in", "gentle_zoom_out"]}}},
+          "then": {"properties": {"scale": {"type": "number"}, "radius": {"const": null}}}
+        },
+        {
+          "if": {"properties": {"effectCode": {"const": "light_blur"}}},
+          "then": {"properties": {"scale": {"const": null}, "radius": {"type": "number"}}}
+        }
+      ],
+      "additionalProperties": false
+    },
+    "element": {
+      "oneOf": [
+        {"$ref": "#/$defs/mainVideoElement"},
+        {"$ref": "#/$defs/imageElement"},
+        {"$ref": "#/$defs/pipVideoElement"},
+        {"$ref": "#/$defs/subtitleElement"},
+        {"$ref": "#/$defs/fancyTextElement"},
+        {"$ref": "#/$defs/audioElement"},
+        {"$ref": "#/$defs/visualEffectElement"}
+      ]
+    },
+    "track": {
+      "type": "object",
+      "required": ["trackId", "trackType", "area", "order", "locked", "muted", "elements"],
+      "properties": {
+        "trackId": {"$ref": "#/$defs/key"},
+        "trackType": {
+          "enum": [
+            "fancy_text", "subtitle", "visual_effect", "image_overlay", "pip_video", "main_video",
+            "primary_audio", "background_music", "sound_effect"
+          ]
+        },
+        "area": {"enum": ["top", "center", "bottom"]},
+        "order": {"type": "integer", "minimum": 0, "maximum": 31},
+        "locked": {"type": "boolean"},
+        "muted": {"type": "boolean"},
+        "elements": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 512,
+          "items": {"$ref": "#/$defs/element"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"trackType": {"const": "fancy_text"}}},
+          "then": {
+            "properties": {"area": {"const": "top"}, "elements": {"items": {"$ref": "#/$defs/fancyTextElement"}}}
+          }
+        },
+        {
+          "if": {"properties": {"trackType": {"const": "subtitle"}}},
+          "then": {
+            "properties": {"area": {"const": "top"}, "elements": {"items": {"$ref": "#/$defs/subtitleElement"}}}
+          }
+        },
+        {
+          "if": {"properties": {"trackType": {"const": "visual_effect"}}},
+          "then": {
+            "properties": {"area": {"const": "top"}, "elements": {"items": {"$ref": "#/$defs/visualEffectElement"}}}
+          }
+        },
+        {
+          "if": {"properties": {"trackType": {"const": "image_overlay"}}},
+          "then": {
+            "properties": {"area": {"const": "top"}, "elements": {"items": {"$ref": "#/$defs/imageElement"}}}
+          }
+        },
+        {
+          "if": {"properties": {"trackType": {"const": "pip_video"}}},
+          "then": {
+            "properties": {"area": {"const": "top"}, "elements": {"items": {"$ref": "#/$defs/pipVideoElement"}}}
+          }
+        },
+        {
+          "if": {"properties": {"trackType": {"const": "main_video"}}},
+          "then": {
+            "properties": {
+              "area": {"const": "center"},
+              "order": {"const": 0},
+              "locked": {"const": true},
+              "elements": {"items": {"$ref": "#/$defs/mainVideoElement"}}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"trackType": {"const": "primary_audio"}}},
+          "then": {
+            "properties": {
+              "area": {"const": "bottom"},
+              "elements": {
+                "items": {
+                  "allOf": [
+                    {"$ref": "#/$defs/audioElement"},
+                    {"properties": {"usageType": {"const": "primary_audio"}}}
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"trackType": {"const": "background_music"}}},
+          "then": {
+            "properties": {
+              "area": {"const": "bottom"},
+              "elements": {
+                "items": {
+                  "allOf": [
+                    {"$ref": "#/$defs/audioElement"},
+                    {"properties": {"usageType": {"const": "background_music"}}}
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"trackType": {"const": "sound_effect"}}},
+          "then": {
+            "properties": {
+              "area": {"const": "bottom"},
+              "elements": {
+                "items": {
+                  "allOf": [
+                    {"$ref": "#/$defs/audioElement"},
+                    {"properties": {"usageType": {"const": "sound_effect"}}}
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "outputConfig": {
+      "type": "object",
+      "required": ["resolutionPreset", "frameRate", "qualityPreset"],
+      "properties": {
+        "resolutionPreset": {"const": "match_canvas"},
+        "frameRate": {"const": 30},
+        "qualityPreset": {"enum": ["standard", "high"]}
+      },
+      "additionalProperties": false
+    }
+  }
+}
