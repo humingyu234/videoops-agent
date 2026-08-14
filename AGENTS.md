@@ -12,7 +12,7 @@
 
 ## 工作原则
 
-- 当前交付目标是世界人工智能大会 Agent 赛道的可验证参赛纵切面，范围以 `docs/PROJECT.md` 和 `docs/PLAN.md` 为准；原 `ai-video.md` 与 `ai-video-pages.md` 仅作为产品能力库与历史需求参考。
+- 当前交付目标是世界人工智能大会 Agent 赛道的可验证参赛纵切面，范围以 `docs/PROJECT.md`、`docs/DECISIONS.md` 和 `docs/PLAN.md` 为准；当前施工现场只以 `docs/EXECUTION.md` 为准。原 `ai-video.md` 与 `ai-video-pages.md` 仅作为产品能力库与历史需求参考。
 - 参赛版实现完成后，用户默认入口改为 `/agent`。当前基线仍从 `/` 进入 `/studio`；原七步 Studio 后续只作为内部调试、人工接管和能力验证入口，不进入参赛默认导航，在工具依赖完成追踪前禁止物理删除。
 - 先复用已存在的认证、资产、音色、数字人任务、时间轴和渲染链路，再新增 Agent 控制面；不得重写已有生成供应商链路来制造“Agent 感”。
 - 每个 Agent 动作必须可追踪，自动返工必须有次数、时间和成本上限，高风险或主观决策必须进入人工确认。
@@ -24,14 +24,24 @@
 ## 必读顺序
 
 1. `RULES.md`
-2. `docs/PROJECT.md`、`docs/PLAN.md`、`docs/BASELINE.md`
-3. `docs/DOCUMENT_MAP.md`
-4. 接口、领域或异步任务相关变更继续读 `docs/API_CONTRACT.md`、`docs/DOMAIN_MODEL.md`、`docs/ASYNC_TASKS.md`
-5. 前端任务继续读 `docs/FRONTEND_GUIDE.md`、`docs/FRONTEND_CODING_STANDARDS.md` 和 `docs/API_CONTRACT.md`
-6. 后端任务继续读 `ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md`、`docs/BACKEND_GUIDE.md`、`docs/BACKEND_CODING_STANDARDS.md` 和 `docs/API_CONTRACT.md`
-7. 所有 AI 协作任务继续读 `docs/AI_AGENT_GOVERNANCE.md`、`docs/AI_CODING_RULES.md`
+2. `docs/PROJECT.md`、`docs/DECISIONS.md`、`docs/PLAN.md`、`docs/BASELINE.md`
+3. 做施工任务时继续读 `docs/EXECUTION.md`、其中指定的当前 `docs/tasks/Tn-*.md` 和当前详细施工计划；纯解释或只读问答不改变施工状态
+4. `docs/DOCUMENT_MAP.md`
+5. 接口、领域或异步任务相关变更继续读 `docs/API_CONTRACT.md`、`docs/DOMAIN_MODEL.md`、`docs/ASYNC_TASKS.md`
+6. 前端任务继续读 `docs/FRONTEND_GUIDE.md`、`docs/FRONTEND_CODING_STANDARDS.md` 和 `docs/API_CONTRACT.md`
+7. 后端任务继续读 `ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md`、`docs/BACKEND_GUIDE.md`、`docs/BACKEND_CODING_STANDARDS.md` 和 `docs/API_CONTRACT.md`
+8. 所有 AI 协作任务继续读 `docs/AI_AGENT_GOVERNANCE.md`、`docs/AI_CODING_RULES.md`
 
 文档规范变更后必须运行 `scripts/validate-development-standards.ps1`；入口文档只负责路由，不复制编码手册正文。
+
+## 跨任务施工协议
+
+- 开工先确认绝对项目路径、分支、HEAD 和 `git status`，再对照 `docs/EXECUTION.md`。存在未记录改动时先查来源，禁止覆盖。
+- 一次只推进当前任务卡。未来 `DRAFT` 卡进入施工前，必须依据当时源码和前置证据生成/更新 writing-plans 详细计划并冻结为 `ACTIVE`。
+- `docs/EXECUTION.md` 是当前进度、阻塞和下一动作的唯一来源；`docs/PLAN.md` 只在阶段状态转换时同步，任务卡保存冻结边界和最终验收记录。
+- 每次通过子步骤、状态变化、出现阻塞或准备交接时更新 `docs/EXECUTION.md`；不写逐分钟流水账。
+- 收工必须记录实际验证的 `PASS`、`FAIL`、`NOT_RUN`、对应源码状态和下一条准确动作。没有当前源码匹配的运行/测试证据，不得标记 `DONE`。
+- 相关源码、配置、环境或验收标准变化后，旧证据必须转为 `NEEDS_REVALIDATION`；Mock、静态阅读、AI 总结或只打开页面不能证明真实 Provider/端到端能力。
 
 ## Superpowers 项目模板
 

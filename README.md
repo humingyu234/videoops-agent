@@ -2,7 +2,7 @@
 
 面向 Agent 赛道的 AI 视频交付智能体：用户用自然语言描述交付目标并提供形象、音色或素材，Agent 负责澄清约束、编排数字人口播生成链、观察异步任务、自动验收、有限返工，并在关键节点请求人工确认。
 
-> 当前状态：已建立不含原 Git 历史的脱敏代码基线；Agent 控制面尚未实现。这里记录的是诚实的开发起点，不是已完成声明。
+> 当前状态：已建立不含原 Git 历史的脱敏代码基线，并固化 T0～T7 施工与验收契约；当前阶段为 T1 人工黄金链，尚未实际运行。Agent 控制面尚未实现。这里记录的是诚实的开发起点，不是已完成声明。
 
 ## 参赛纵切面
 
@@ -42,10 +42,13 @@ scripts/           本地验证与安全脚本
 ## 开始前先读
 
 1. [docs/PROJECT.md](docs/PROJECT.md)：产品目标、保留/隐藏/延期范围与验收标准。
-2. [docs/PLAN.md](docs/PLAN.md)：按纵切面拆分的开发任务。
-3. [docs/BASELINE.md](docs/BASELINE.md)：来源提交、已知分支与安全边界。
-4. [AGENTS.md](AGENTS.md) 与 [RULES.md](RULES.md)：AI 协作和工程硬规则。
-5. [docs/FRONTEND_CODING_STANDARDS.md](docs/FRONTEND_CODING_STANDARDS.md) 与 [docs/BACKEND_CODING_STANDARDS.md](docs/BACKEND_CODING_STANDARDS.md)：进入前后端编码时的专项标准。
+2. [docs/DECISIONS.md](docs/DECISIONS.md)：本轮讨论已经确认的产品、架构、评价、返工和比赛取舍。
+3. [docs/PLAN.md](docs/PLAN.md)：T0～T7 的阶段路线、依赖和完成信号。
+4. [docs/EXECUTION.md](docs/EXECUTION.md)：当前真正做到哪里、已知阻塞、证据与下一动作。
+5. [docs/tasks/README.md](docs/tasks/README.md)：当前与未来阶段卡；施工时只执行 `EXECUTION.md` 指定的当前卡。
+6. [docs/BASELINE.md](docs/BASELINE.md)：来源提交、已知分支与安全边界。
+7. [AGENTS.md](AGENTS.md) 与 [RULES.md](RULES.md)：AI 协作和工程硬规则。
+8. [docs/FRONTEND_CODING_STANDARDS.md](docs/FRONTEND_CODING_STANDARDS.md) 与 [docs/BACKEND_CODING_STANDARDS.md](docs/BACKEND_CODING_STANDARDS.md)：进入前后端编码时的专项标准。
 
 ## 安全
 
@@ -56,4 +59,4 @@ scripts/           本地验证与安全脚本
 
 ## 路线图
 
-先跑通人工黄金链，再实现 Delivery Brief、最小编排器、可观察轨迹、自动评价与有限返工；最后才做视觉包装、更多供应商或开放式多智能体。完整任务见 [docs/PLAN.md](docs/PLAN.md)。
+先跑通人工黄金链，再实现交付契约/可恢复状态、类型化工具、受约束编排、自动评价与有限返工；最后完成 `/agent` 页面和公开交付。完整路线见 [docs/PLAN.md](docs/PLAN.md)，当前准确动作见 [docs/EXECUTION.md](docs/EXECUTION.md)。

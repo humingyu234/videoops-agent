@@ -47,6 +47,9 @@ $paths = @{
   BackendGuide = Join-Path $docsRoot 'BACKEND_GUIDE.md'; FrontendGuide = Join-Path $docsRoot 'FRONTEND_GUIDE.md'
   BackendStandards = Join-Path $docsRoot 'BACKEND_CODING_STANDARDS.md'; FrontendStandards = Join-Path $docsRoot 'FRONTEND_CODING_STANDARDS.md'
   AiRules = Join-Path $docsRoot 'AI_CODING_RULES.md'; DocumentMap = Join-Path $docsRoot 'DOCUMENT_MAP.md'
+  Project = Join-Path $docsRoot 'PROJECT.md'; Decisions = Join-Path $docsRoot 'DECISIONS.md'
+  Plan = Join-Path $docsRoot 'PLAN.md'; Execution = Join-Path $docsRoot 'EXECUTION.md'
+  TasksReadme = Join-Path $docsRoot 'tasks\README.md'
   LegacyStandards = Join-Path $docsRoot 'CODING_STANDARDS.md'
 }
 
@@ -111,6 +114,83 @@ Assert-ContainsAll -Path $paths.Agents -Terms @(
   'scripts/validate-development-standards.ps1', 'ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md'
 )
 Assert-ContainsAll -Path $paths.Architecture -Terms @('BACKEND_CODING_STANDARDS.md', 'FRONTEND_CODING_STANDARDS.md')
+
+foreach ($path in @($paths.Agents, $paths.Rules, $paths.Readme, $paths.DocumentMap)) {
+  Assert-ContainsAll -Path $path -Terms @('docs/DECISIONS.md', 'docs/PLAN.md', 'docs/EXECUTION.md', 'docs/tasks/')
+}
+Assert-ContainsAll -Path $paths.Plan -Terms @(
+  'NOT_STARTED', 'IN_PROGRESS', 'VERIFYING', 'BLOCKED', 'DONE', 'NEEDS_REVALIDATION', 'DEFERRED',
+  'EXECUTION.md', 'tasks/'
+)
+Assert-ContainsAll -Path $paths.Execution -Terms @(
+  '当前阶段', '当前任务卡', '状态', '证据索引', '下一条准确动作', 'PASS', 'FAIL', 'NOT_RUN'
+)
+Assert-NotMatch -Path $paths.Execution -Patterns @('完成后重新记录', '稍后补充', 'TODO：更新当前')
+Assert-ContainsAll -Path $paths.TasksReadme -Terms @(
+  'PROJECT.md', 'DECISIONS.md', 'PLAN.md', 'EXECUTION.md', 'DRAFT', 'ACTIVE', 'ACCEPTED'
+)
+
+$taskCards = @(Get-ChildItem -LiteralPath (Join-Path $docsRoot 'tasks') -Filter '*.md' -File |
+  Where-Object { $_.Name -match '^T[0-7]-.*\.md$' })
+if ($taskCards.Count -ne 8) {
+  Add-ValidationError "docs/tasks 必须恰好包含 T0-T7 八张阶段卡，当前为 $($taskCards.Count) 张"
+}
+foreach ($taskCard in $taskCards) {
+  Assert-ContainsAll -Path $taskCard.FullName -Terms @(
+    '卡片状态', '路线状态', '风险等级及原因', '前置阶段', '权威来源', '允许影响范围',
+    '实施/审查安排', '固定交付格式', '## 1. 目标', '## 2. 用户可见行为', '## 3. 修改边界',
+    '## 4. 非目标', '## 5. 验收场景', '## 6. 验证与证据', '## 验收记录'
+  )
+}
+
+if (Test-Path -LiteralPath $paths.Execution -PathType Leaf) {
+  $executionContent = Read-Utf8File -Path $paths.Execution
+  $currentStageMatch = [regex]::Match($executionContent, '\|\s*当前阶段\s*\|\s*(?<stage>T[0-9]+)(?:\s*[:：][^|]*)?\|')
+  $executionStatusMatch = [regex]::Match($executionContent, '\|\s*状态\s*\|\s*`(?<status>[A-Z_]+)`\s*\|')
+  $currentTaskMatch = [regex]::Match($executionContent, 'docs/tasks/(?<task>[A-Za-z0-9._-]+\.md)')
+  $currentPlanMatch = [regex]::Match($executionContent, 'docs/superpowers/plans/(?<plan>[A-Za-z0-9._-]+\.md)')
+  if (-not $currentStageMatch.Success) {
+    Add-ValidationError "$($paths.Execution) 未声明当前 Tn 阶段"
+  }
+  if (-not $executionStatusMatch.Success) {
+    Add-ValidationError "$($paths.Execution) 未声明标准当前状态"
+  }
+  if (-not $currentTaskMatch.Success) {
+    Add-ValidationError "$($paths.Execution) 未引用当前 docs/tasks/Tn-*.md"
+  }
+  else {
+    $currentTaskPath = Join-Path (Join-Path $docsRoot 'tasks') $currentTaskMatch.Groups['task'].Value
+    Assert-FileExists -Path $currentTaskPath
+    if ($currentStageMatch.Success -and $executionStatusMatch.Success -and (Test-Path -LiteralPath $currentTaskPath -PathType Leaf)) {
+      $stage = $currentStageMatch.Groups['stage'].Value
+      $executionStatus = $executionStatusMatch.Groups['status'].Value
+      if (-not $currentTaskMatch.Groups['task'].Value.StartsWith("$stage-", [StringComparison]::OrdinalIgnoreCase)) {
+        Add-ValidationError "$($paths.Execution) 当前阶段 $stage 与任务卡 $($currentTaskMatch.Groups['task'].Value) 不一致"
+      }
+
+      $taskContent = Read-Utf8File -Path $currentTaskPath
+      $taskStatusMatch = [regex]::Match($taskContent, '\|\s*路线状态\s*\|\s*`(?<status>[A-Z_]+)`\s*\|')
+      if (-not $taskStatusMatch.Success -or $taskStatusMatch.Groups['status'].Value -ne $executionStatus) {
+        Add-ValidationError "$currentTaskPath 路线状态与 EXECUTION.md 不一致"
+      }
+
+      $planContent = Read-Utf8File -Path $paths.Plan
+      $escapedStage = [regex]::Escape($stage)
+      $planStagePattern = '\|\s*\[' + $escapedStage + '\]\([^)]+\)[^\r\n]*\|\s*`(?<status>[A-Z_]+)`\s*\|'
+      $planStageMatch = [regex]::Match($planContent, $planStagePattern)
+      if (-not $planStageMatch.Success -or $planStageMatch.Groups['status'].Value -ne $executionStatus) {
+        Add-ValidationError "$($paths.Plan) 的 $stage 状态与 EXECUTION.md 不一致"
+      }
+    }
+  }
+  if (-not $currentPlanMatch.Success) {
+    Add-ValidationError "$($paths.Execution) 未引用当前详细施工计划"
+  }
+  else {
+    $currentPlanPath = Join-Path (Join-Path $docsRoot 'superpowers\plans') $currentPlanMatch.Groups['plan'].Value
+    Assert-FileExists -Path $currentPlanPath
+  }
+}
 
 $activeRootFiles = @($paths.Agents, $paths.Rules, $paths.Readme) | ForEach-Object { Get-Item -LiteralPath $_ }
 $activeDocs = Get-ChildItem -LiteralPath $docsRoot -Recurse -Filter '*.md' -File |

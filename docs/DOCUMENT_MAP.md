@@ -58,8 +58,8 @@ docs/                   # 项目公共规则、契约和指南
 
 ## 先读什么
 
-- AI Agent：先读 `AGENTS.md`、`docs/PROJECT.md`、`docs/PLAN.md` 和 `docs/BASELINE.md`，再按任务类型读取本文档列出的专项文档。
-- 人类开发：先读 `README.md`、`docs/PROJECT.md`、`docs/PLAN.md`、`RULES.md` 和 `docs/ARCHITECTURE.md`，再读对应前端、后端或契约文档。
+- AI Agent：先读 `AGENTS.md`、`docs/PROJECT.md`、`docs/DECISIONS.md`、`docs/PLAN.md` 和 `docs/BASELINE.md`；施工任务继续读 `docs/EXECUTION.md` 及当前任务卡，再按任务类型读取专项文档。
+- 人类开发：先读 `README.md`、`docs/PROJECT.md`、`docs/DECISIONS.md`、`docs/PLAN.md`、`docs/EXECUTION.md`、`RULES.md` 和 `docs/ARCHITECTURE.md`，再读当前任务卡和对应前端、后端或契约文档。
 - 进入具体模块开发前：先通过 superpowers 生成或确认模块规格和实现计划。
 
 ## 按任务选择文档
@@ -81,7 +81,10 @@ docs/                   # 项目公共规则、契约和指南
 ## 文档边界
 
 - `docs/PROJECT.md`：参赛产品目标、用户主链、范围和总体完成标准。
-- `docs/PLAN.md`：当前阶段任务、非目标、验收信号和检查项。
+- `docs/DECISIONS.md`：已确认的参赛产品、架构、评价、返工、范围和发布取舍及原因。
+- `docs/PLAN.md`：T0～T7 路线、阶段依赖、粗状态和完成信号。
+- `docs/EXECUTION.md`：当前施工现场、子步骤、证据、阻塞和下一动作的唯一实时来源。
+- `docs/tasks/`：阶段目标、边界、反向场景、验证方法和最终验收记录；未来卡在进入阶段前保持草案。
 - `docs/BASELINE.md`：导入来源、分支迁移状态、安全处理和可追溯限制。
 
 ### 发现页 RunningHub 单执行公共契约（2026-08-11）
@@ -102,6 +105,9 @@ docs/                   # 项目公共规则、契约和指南
 
 ## 何时更新文档
 
+- 改产品范围或最终验收：更新 `docs/PROJECT.md`；形成会影响后续施工的明确取舍时同步 `docs/DECISIONS.md`。
+- 改阶段路线、依赖或粗状态：更新 `docs/PLAN.md`；当前子步骤、证据、阻塞或下一动作只更新 `docs/EXECUTION.md`。
+- 阶段开始前根据当前源码冻结对应 `docs/tasks/` 卡并生成/更新详细计划；阶段完成后把验收记录写回该卡。源码、配置、环境或标准变化使证据失效时标记 `NEEDS_REVALIDATION`。
 - 改 AI 协作、风险分级、质量门禁、并发、审查或 Token 治理：更新 docs/AI_AGENT_GOVERNANCE.md，并同步检查 AGENTS.md、RULES.md、docs/AI_CODING_RULES.md、docs/DOCUMENT_MAP.md 和 superpowers 模板的薄引用。
 - 改公共接口格式、分页、上传下载或 API 适配规则：更新 `docs/API_CONTRACT.md`。
 - 改领域对象、字段含义、状态、字典或数据归属规则：更新 `docs/DOMAIN_MODEL.md`。
