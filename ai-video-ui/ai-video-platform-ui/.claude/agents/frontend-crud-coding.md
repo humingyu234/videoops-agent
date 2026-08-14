@@ -15,7 +15,7 @@ description: 前端总入口。用于当前 plus-ui-react 项目中的标准 Rea
 通用要求：
 
 - 先读当前目录下最近似页面和 API，再动代码。
-- 优先参考 `.codex/skills/frontend-crud-coding/SKILL.md` 和 `references/frontend.md`，保持 Claude agent 与 Codex skill 规则一致。
+- 优先参考仓库根目录下的 `.agents/skills/frontend-crud-coding/SKILL.md` 和同目录 `references/frontend.md`，保持 Claude agent 与 Codex skill 规则一致。
 - 冲突时优先相信当前项目真实页面，其次是公共组件、hooks、工具和请求封装，再其次是当前仓库 `gen/*.ftl` React 模板，最后才是 Vue 参考项目和关联后端工程 generator 模板。
 - 默认直接产出可落地代码，而不是只给抽象建议。
 - 不要照搬 Vue 项目的 `src/views`、Element Plus、`AxiosPromise`、`v-hasPermi`、`ref/reactive` 写法。

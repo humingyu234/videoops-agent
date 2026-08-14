@@ -13,18 +13,16 @@
 
 后端任务必须先阅读 RuoYi Plus AI Coding skill，再查阅本项目文档和代码。推荐本地 skill 路径为：
 
-`ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md`
-
-官方位置：`https://gitee.com/dromara/RuoYi-Vue-Plus/tree/6.X/.codex/skills/ruoyi-plus-ai-coding`。
+`.agents/skills/ruoyi-plus-ai-coding/SKILL.md`
 
 建议的阅读顺序：
 
 1. RuoYi Plus AI Coding skill。
 2. [后端编码规范](BACKEND_CODING_STANDARDS.md)。
-3. 与任务相关的 [API 契约](API_CONTRACT.md)、[领域模型](DOMAIN_MODEL.md) 和 [异步任务契约](ASYNC_TASKS.md)。
+3. 先检索并只读与任务相关的 [API 契约](API_CONTRACT.md)、[领域模型](DOMAIN_MODEL.md) 和 [异步任务契约](ASYNC_TASKS.md) 章节，不整本预载。
 4. generator 模板、同类已实现模块及其测试。
 
-本地 skill 缺失时，明确说明缺失并查阅官方位置或等待团队安装；不得凭记忆替代框架约束。
+本地 skill 缺失时，明确说明缺失并查阅 RuoYi-Vue-Plus 6.x 官方文档或等待团队安装；不得凭记忆替代框架约束。
 
 ## RuoYi 标准分层硬约束
 

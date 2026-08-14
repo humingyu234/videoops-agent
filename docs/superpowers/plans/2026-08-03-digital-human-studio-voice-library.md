@@ -73,7 +73,7 @@
 
 - [ ] **步骤 1：使用工作树技能隔离当前脏工作区**
 
-完整读取并执行 `.codex/skills/using-git-worktrees/SKILL.md`。从仓库根目录先确认 `.worktrees` 已忽略：
+完整读取并执行 `.trae/skills/using-git-worktrees/SKILL.md`。从仓库根目录先确认 `.worktrees` 已忽略：
 
 ```powershell
 git check-ignore -q .worktrees
@@ -1175,7 +1175,7 @@ npm run dev
 
 - [ ] **步骤 5：执行一轮独立代码审查**
 
-完整读取并使用 `.codex/skills/requesting-code-review/SKILL.md`。审查范围固定为 `main...HEAD`，审查清单固定为：
+完整读取并使用 `.trae/skills/requesting-code-review/SKILL.md`。审查范围固定为 `main...HEAD`，审查清单固定为：
 
 - 参考页 1707–1906 行的可到达行为是否全部覆盖。
 - `requestAnimationFrame`、pointer capture、timeout 是否在切换/卸载时清理。
@@ -1188,7 +1188,7 @@ npm run dev
 
 - [ ] **步骤 6：用完成前验证技能收口**
 
-完整读取并使用 `.codex/skills/verification-before-completion/SKILL.md`，重新运行受修复影响的定向测试；若有代码修复，再运行一次 `npm test`、`npm run tsc`、`npm run biome:lint`、`npm run build`。最终报告必须列出：完成项、参考哈希、测试/类型/静态检查/构建证据、桌面/窄视口证据、审查结论、残余风险和明确未做范围。
+完整读取并使用 `.trae/skills/verification-before-completion/SKILL.md`，重新运行受修复影响的定向测试；若有代码修复，再运行一次 `npm test`、`npm run tsc`、`npm run biome:lint`、`npm run build`。最终报告必须列出：完成项、参考哈希、测试/类型/静态检查/构建证据、桌面/窄视口证据、审查结论、残余风险和明确未做范围。
 
 若任务 6 没有代码变更，不创建空提交；若有必要修复，只暂存本计划文件并提交：
 

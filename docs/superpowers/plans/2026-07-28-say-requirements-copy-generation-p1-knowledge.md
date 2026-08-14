@@ -6,7 +6,7 @@
 
 **架构：** 后端严格使用 RuoYi-Vue-Plus 的贫血 Entity + Mapper + Service 编排。`ai-video-core` 保存领域对象、DTO、Mapper、Service 与 `service.impl`；`ai-video-platform` 只保存 HTTP Controller/BO/VO；`ai-video-infra` 只保存 ZIP provider、外部 client 和异步 listener。禁止创建平行业务层。
 
-**计划依据：** `AGENTS.md`、`RULES.md`、`docs/DOCUMENT_MAP.md`、`docs/API_CONTRACT.md`、`docs/DOMAIN_MODEL.md`、`docs/ASYNC_TASKS.md`、前后端指南与编码规范、`docs/AI_AGENT_GOVERNANCE.md`、`docs/AI_CODING_RULES.md`、并行交付规格、计划整改文档 Task 5，以及 `ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md`。
+**计划依据：** `AGENTS.md`、`RULES.md`、`docs/DOCUMENT_MAP.md`、`docs/API_CONTRACT.md`、`docs/DOMAIN_MODEL.md`、`docs/ASYNC_TASKS.md`、前后端指南与编码规范、`docs/AI_AGENT_GOVERNANCE.md`、`docs/AI_CODING_RULES.md`、并行交付规格、计划整改文档 Task 5，以及 `.agents/skills/ruoyi-plus-ai-coding/SKILL.md`。
 
 ---
 

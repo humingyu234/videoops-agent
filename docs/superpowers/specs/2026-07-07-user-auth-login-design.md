@@ -12,7 +12,7 @@
 - 用户端页面位于 `ai-video-ui/ai-video-webapp`，本规格只提供接口参考，不包含前端改造任务。
 - RuoYi 的 `sys_user`、用户管理、角色、部门、菜单权限继续定位为运营管理端能力，不作为用户端登录主体。
 - 运营管理端需要管理用户端账号 `ai_user`，但管理对象必须是用户端账号表 `ai_user`，不是 `sys_user`。
-- 运营管理端前端项目位于 `ai-video-ui/ai-video-platform-ui`，对应前端 CRUD skill 位于 `ai-video-ui/ai-video-platform-ui/.codex/skills/frontend-crud-coding/SKILL.md`。
+- 运营管理端前端项目位于 `ai-video-ui/ai-video-platform-ui`，对应前端 CRUD skill 位于 `.agents/skills/frontend-crud-coding/SKILL.md`。
 - 运营端 `ai_user` 管理后端接口和运营端 `ai_user` 管理页面均纳入本规格范围。
 - 本次不实现短信验证码登录。
 - 本次不包含店铺功能，不新增 `shop`、`shopId`、`shopName` 等字段或接口。
@@ -101,7 +101,7 @@
 前端入口：
 
 - 项目：`ai-video-ui/ai-video-platform-ui`
-- Skill：`ai-video-ui/ai-video-platform-ui/.codex/skills/frontend-crud-coding/SKILL.md`
+- Skill：`.agents/skills/frontend-crud-coding/SKILL.md`
 
 运营端管理范围包括：
 
@@ -240,7 +240,7 @@
 运营端管理页面要求：
 
 - 页面位于 `ai-video-ui/ai-video-platform-ui`。
-- 实现前必须读取 `ai-video-ui/ai-video-platform-ui/.codex/skills/frontend-crud-coding/SKILL.md`。
+- 实现前必须读取 `.agents/skills/frontend-crud-coding/SKILL.md`。
 - 页面管理对象为 `ai_user`，不得调用或改造 `sys_user` 管理页面来承载用户端账号。
 - 页面至少包含列表、查询筛选、详情、新增、编辑、启停、重置密码操作。
 - 新增和重置密码成功后必须展示一次性密码，并提示运营人员及时复制；关闭弹窗后不再显示明文密码。
@@ -541,7 +541,7 @@ API 前缀遵循项目公共契约，固定为 `/api`。
 运营端前端开发：
 
 - 在 `ai-video-ui/ai-video-platform-ui` 中实现用户端账号管理页。
-- 实现前必须读取 `ai-video-ui/ai-video-platform-ui/.codex/skills/frontend-crud-coding/SKILL.md`。
+- 实现前必须读取 `.agents/skills/frontend-crud-coding/SKILL.md`。
 - 页面管理对象为 `ai_user`，不得调用或改造 `sys_user` 管理页面来承载用户端账号。
 
 联调顺序：

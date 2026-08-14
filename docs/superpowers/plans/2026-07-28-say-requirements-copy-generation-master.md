@@ -40,7 +40,7 @@
 
 ## 后端任务执行前置阅读
 
-- 每次开始后端任务前，必须完整阅读 `ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md` 与 `ai-video-api/.codex/skills/ruoyi-plus-ai-coding/references/backend.md`，不得只凭既有记忆实现 RuoYi-Vue-Plus（若依增强版）分层。
+- 每次开始后端任务前，必须完整阅读 `.agents/skills/ruoyi-plus-ai-coding/SKILL.md` 与 `.agents/skills/ruoyi-plus-ai-coding/references/backend.md`，不得只凭既有记忆实现 RuoYi-Vue-Plus（若依增强版）分层。
 - 随后逐项对照 `ai-video-api/ruoyi-modules/ruoyi-gen/src/main/resources/fm/java/*.ftl`、`ai-video-api/ruoyi-modules/ruoyi-gen/src/main/resources/fm/xml/mapper.xml.ftl` 的 FreeMarker（代码生成模板引擎）模板，并查阅仓库内职责最接近的真实业务模块；模板、真实模块与本计划共同决定 Maven（Java 项目构建工具）模块位置、分层、Mapper（数据访问映射器）、事务和测试写法。
 - 创作端用户实体“不继承 `BaseEntity`（默认审计基类）”以及创作端控制器“不使用默认 `@Log`（运营用户日志注解）”是本需求为隔离用户端与运营端身份而明确规定的安全例外，优先级高于通用 CRUD（增删改查）模板；必须改用强类型操作者字段与 `IAppSecurityAuditService`（创作端安全审计服务）。
 

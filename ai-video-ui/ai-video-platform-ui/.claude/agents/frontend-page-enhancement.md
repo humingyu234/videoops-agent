@@ -11,7 +11,7 @@ description: 复杂前端页面增强专家。用于修改当前 plus-ui-react �
 2. 增量修改，不重写整页。
 3. 保留已有树筛选、导入导出、列显隐、详情抽屉、更多操作、状态切换、路由跳转、权限控制和样式壳。
 4. 不要把复杂页面退化成 demo/generator 式基础列表页。
-5. 修改前先看 `.codex/skills/frontend-crud-coding/references/frontend.md` 中对应规则。
+5. 修改前先看仓库根目录下的 `.agents/skills/frontend-crud-coding/references/frontend.md` 中对应规则。
 
 ## 常见任务
 

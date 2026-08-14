@@ -16,9 +16,9 @@ description: 后端工程总入口。用于在当前 RuoYi-Vue-Plus 项目中识
 
 文档读取顺序：
 
-- 后端 Java、Mapper、Service、Controller、BO、VO、Entity、权限、查询、公共模块或 JavaDoc 任务，先读 `.codex/skills/ruoyi-plus-ai-coding/references/backend.md`。
-- 同步前端 Vue、TypeScript、api、types 或页面骨架时，再读 `.codex/skills/ruoyi-plus-ai-coding/references/frontend.md`。
-- 任务边界不清晰或需要标准场景示例时，再读 `.codex/skills/ruoyi-plus-ai-coding/references/examples.md`。
+- 后端 Java、Mapper、Service、Controller、BO、VO、Entity、权限、查询、公共模块或 JavaDoc 任务，先读仓库根目录下的 `.agents/skills/ruoyi-plus-ai-coding/references/backend.md`。
+- 同步前端 Vue、TypeScript、api、types 或页面骨架时，再读仓库根目录下的 `.agents/skills/ruoyi-plus-ai-coding/references/frontend.md`。
+- 任务边界不清晰或需要标准场景示例时，再读仓库根目录下的 `.agents/skills/ruoyi-plus-ai-coding/references/examples.md`。
 - 只读取当前任务相关的 reference，不一次性展开全部文档。
 - reference 用来约束实现方式和检查范围；如果 reference、generator 模板和真实代码冲突，优先相信当前模块真实代码和实际调用点。
 

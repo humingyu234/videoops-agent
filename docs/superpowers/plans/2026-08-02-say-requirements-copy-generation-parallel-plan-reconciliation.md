@@ -35,7 +35,7 @@
 - `AGENTS.md`、`RULES.md`、`docs/DOCUMENT_MAP.md`
 - `docs/AI_AGENT_GOVERNANCE.md`、`docs/AI_CODING_RULES.md`
 - `docs/BACKEND_GUIDE.md`、`docs/BACKEND_CODING_STANDARDS.md`、`docs/DOMAIN_MODEL.md`
-- `ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md` 及其 `references/backend.md`
+- `.agents/skills/ruoyi-plus-ai-coding/SKILL.md` 及其 `references/backend.md`
 - `docs/superpowers/plans/2026-07-28-say-requirements-copy-generation-p0a-identity-security.md`
 - `docs/superpowers/plans/2026-08-01-p0a-ruoyi-layering-remediation.md`
 - `docs/superpowers/plans/2026-08-01-p0a-local-integration-test-remediation.md`

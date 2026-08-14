@@ -2,7 +2,7 @@
 
 面向 Agent 赛道的 AI 视频交付智能体：用户用自然语言描述交付目标并提供形象、音色或素材，Agent 负责澄清约束、编排数字人口播生成链、观察异步任务、自动验收、有限返工，并在关键节点请求人工确认。
 
-> 当前状态：已建立不含原 Git 历史的脱敏代码基线，并固化 T0～T7 施工与验收契约；当前阶段为 T1 人工黄金链，尚未实际运行。Agent 控制面尚未实现。这里记录的是诚实的开发起点，不是已完成声明。
+> 本仓库是脱敏后的开发基线，不代表 Agent 控制面或真实端到端链路已经完成。当前阶段、风险、阻塞、证据和下一动作只见 [docs/EXECUTION.md](docs/EXECUTION.md)。
 
 ## 参赛纵切面
 
@@ -41,14 +41,16 @@ scripts/           本地验证与安全脚本
 
 ## 开始前先读
 
-1. [docs/PROJECT.md](docs/PROJECT.md)：产品目标、保留/隐藏/延期范围与验收标准。
-2. [docs/DECISIONS.md](docs/DECISIONS.md)：本轮讨论已经确认的产品、架构、评价、返工和比赛取舍。
-3. [docs/PLAN.md](docs/PLAN.md)：T0～T7 的阶段路线、依赖和完成信号。
-4. [docs/EXECUTION.md](docs/EXECUTION.md)：当前真正做到哪里、已知阻塞、证据与下一动作。
-5. [docs/tasks/README.md](docs/tasks/README.md)：当前与未来阶段卡；施工时只执行 `EXECUTION.md` 指定的当前卡。
-6. [docs/BASELINE.md](docs/BASELINE.md)：来源提交、已知分支与安全边界。
-7. [AGENTS.md](AGENTS.md) 与 [RULES.md](RULES.md)：AI 协作和工程硬规则。
-8. [docs/FRONTEND_CODING_STANDARDS.md](docs/FRONTEND_CODING_STANDARDS.md) 与 [docs/BACKEND_CODING_STANDARDS.md](docs/BACKEND_CODING_STANDARDS.md)：进入前后端编码时的专项标准。
+Codex 自动从 [AGENTS.md](AGENTS.md) 进入项目。会修改仓库、环境或进度时继续读取 [docs/EXECUTION.md](docs/EXECUTION.md)；实际执行时只读其中指向的当前详细计划。不要默认加载历史规格、计划或全部契约。
+
+人类成员和专项任务按需读取：
+
+1. [RULES.md](RULES.md)：项目工程、安全和数据硬边界。
+2. [docs/PROJECT.md](docs/PROJECT.md) 与 [docs/DECISIONS.md](docs/DECISIONS.md)：产品范围、完成标准和已确认取舍。
+3. [docs/PLAN.md](docs/PLAN.md)：仅用于调整 T0～T7 路线、范围或依赖。
+4. [docs/DOCUMENT_MAP.md](docs/DOCUMENT_MAP.md)：按任务选择专项文档和 skill。
+5. [docs/BASELINE.md](docs/BASELINE.md)：仅用于来源追溯、分支迁移或公开发布安全核对。
+6. 前后端编码时读取对应指南、编码规范及本次变更涉及的契约章节。
 
 ## 安全
 

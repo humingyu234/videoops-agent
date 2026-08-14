@@ -21,7 +21,7 @@
 1. `AGENTS.md`、`RULES.md`、`docs/DOCUMENT_MAP.md`。
 2. `docs/API_CONTRACT.md`、`docs/DOMAIN_MODEL.md`、`docs/ASYNC_TASKS.md`。
 3. `docs/BACKEND_GUIDE.md`、`docs/BACKEND_CODING_STANDARDS.md`、`docs/FRONTEND_GUIDE.md`、`docs/FRONTEND_CODING_STANDARDS.md`。
-4. `docs/AI_AGENT_GOVERNANCE.md`、`docs/AI_CODING_RULES.md`、`ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md` 及其 `references/backend.md`。
+4. `docs/AI_AGENT_GOVERNANCE.md`、`docs/AI_CODING_RULES.md`、`.agents/skills/ruoyi-plus-ai-coding/SKILL.md` 及其 `references/backend.md`。
 5. 总计划提交 `37e2a15aa`、并行调和提交 `5ae54d31c`、已批准并行规格提交 `bb3d2b22e`。
 6. P0-B 权威提交 `cb32b656`；P0-C 权威提交 `305b2d939` 及下游修订 `713c15c21`；P1 权威提交 `eb5aac8a`。不得把 P0-B 提交冒充 P0-C 基线。
 7. P1/P2 只能通过各自独立审核通过、不可变且绑定 candidate HEAD 的 handoff 文件成为下游权威；开发 worktree 中未审核的源码不构成契约。

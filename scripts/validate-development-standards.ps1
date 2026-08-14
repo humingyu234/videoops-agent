@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param()
 
 Set-StrictMode -Version Latest
@@ -20,7 +20,9 @@ function Read-Utf8File {
 
 function Assert-FileExists {
   param([Parameter(Mandatory)][string]$Path)
-  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { Add-ValidationError "缺少文件：$Path" }
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    Add-ValidationError "缺少文件：$Path"
+  }
 }
 
 function Assert-ContainsAll {
@@ -28,7 +30,9 @@ function Assert-ContainsAll {
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
   $content = Read-Utf8File -Path $Path
   foreach ($term in $Terms) {
-    if (-not $content.Contains($term)) { Add-ValidationError "$Path 缺少：$term" }
+    if (-not $content.Contains($term)) {
+      Add-ValidationError "$Path 缺少：$term"
+    }
   }
 }
 
@@ -37,24 +41,50 @@ function Assert-NotMatch {
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
   $content = Read-Utf8File -Path $Path
   foreach ($pattern in $Patterns) {
-    if ($content -match $pattern) { Add-ValidationError "$Path 仍匹配禁用模式：$pattern" }
+    if ($content -match $pattern) {
+      Add-ValidationError "$Path 仍匹配禁用模式：$pattern"
+    }
   }
 }
 
 $paths = @{
-  Agents = Join-Path $projectRoot 'AGENTS.md'; Rules = Join-Path $projectRoot 'RULES.md'; Readme = Join-Path $projectRoot 'README.md'
-  Architecture = Join-Path $docsRoot 'ARCHITECTURE.md'; ApiContract = Join-Path $docsRoot 'API_CONTRACT.md'
-  BackendGuide = Join-Path $docsRoot 'BACKEND_GUIDE.md'; FrontendGuide = Join-Path $docsRoot 'FRONTEND_GUIDE.md'
-  BackendStandards = Join-Path $docsRoot 'BACKEND_CODING_STANDARDS.md'; FrontendStandards = Join-Path $docsRoot 'FRONTEND_CODING_STANDARDS.md'
-  AiRules = Join-Path $docsRoot 'AI_CODING_RULES.md'; DocumentMap = Join-Path $docsRoot 'DOCUMENT_MAP.md'
-  Project = Join-Path $docsRoot 'PROJECT.md'; Decisions = Join-Path $docsRoot 'DECISIONS.md'
-  Plan = Join-Path $docsRoot 'PLAN.md'; Execution = Join-Path $docsRoot 'EXECUTION.md'
-  TasksReadme = Join-Path $docsRoot 'tasks\README.md'
+  Agents = Join-Path $projectRoot 'AGENTS.md'
+  Claude = Join-Path $projectRoot 'CLAUDE.md'
+  Rules = Join-Path $projectRoot 'RULES.md'
+  Readme = Join-Path $projectRoot 'README.md'
+  Architecture = Join-Path $docsRoot 'ARCHITECTURE.md'
+  ApiContract = Join-Path $docsRoot 'API_CONTRACT.md'
+  BackendGuide = Join-Path $docsRoot 'BACKEND_GUIDE.md'
+  FrontendGuide = Join-Path $docsRoot 'FRONTEND_GUIDE.md'
+  BackendStandards = Join-Path $docsRoot 'BACKEND_CODING_STANDARDS.md'
+  FrontendStandards = Join-Path $docsRoot 'FRONTEND_CODING_STANDARDS.md'
+  AiRules = Join-Path $docsRoot 'AI_CODING_RULES.md'
+  DocumentMap = Join-Path $docsRoot 'DOCUMENT_MAP.md'
+  Project = Join-Path $docsRoot 'PROJECT.md'
+  Decisions = Join-Path $docsRoot 'DECISIONS.md'
+  Plan = Join-Path $docsRoot 'PLAN.md'
+  Execution = Join-Path $docsRoot 'EXECUTION.md'
+  Baseline = Join-Path $docsRoot 'BASELINE.md'
+  WebAgents = Join-Path $projectRoot 'ai-video-ui\ai-video-webapp\AGENTS.md'
+  WebClaude = Join-Path $projectRoot 'ai-video-ui\ai-video-webapp\CLAUDE.md'
+  ClaudeAntdSkill = Join-Path $projectRoot 'ai-video-ui\ai-video-webapp\.claude\skills\antd\SKILL.md'
+  ClaudeProUpgradeSkill = Join-Path $projectRoot 'ai-video-ui\ai-video-webapp\.claude\skills\pro-upgrade\SKILL.md'
+  ApiAgents = Join-Path $projectRoot 'ai-video-api\AGENTS.md'
   LegacyStandards = Join-Path $docsRoot 'CODING_STANDARDS.md'
 }
 
-foreach ($path in $paths.Values) { if ($path -ne $paths.LegacyStandards) { Assert-FileExists -Path $path } }
-if (Test-Path -LiteralPath $paths.LegacyStandards) { Add-ValidationError "旧规范仍存在：$($paths.LegacyStandards)" }
+$requiredPaths = @(
+  $paths.Agents, $paths.Claude, $paths.Rules, $paths.Readme, $paths.Architecture,
+  $paths.ApiContract, $paths.BackendGuide, $paths.FrontendGuide,
+  $paths.BackendStandards, $paths.FrontendStandards, $paths.AiRules,
+  $paths.DocumentMap, $paths.Project, $paths.Decisions, $paths.Plan,
+  $paths.Execution, $paths.Baseline, $paths.WebAgents, $paths.WebClaude,
+  $paths.ClaudeAntdSkill, $paths.ClaudeProUpgradeSkill, $paths.ApiAgents
+)
+foreach ($path in $requiredPaths) { Assert-FileExists -Path $path }
+if (Test-Path -LiteralPath $paths.LegacyStandards) {
+  Add-ValidationError "旧规范仍存在：$($paths.LegacyStandards)"
+}
 
 $ruleShape = @('【强制】', '【推荐】', '【参考】', '正例：', '反例：', '检查方式：')
 Assert-ContainsAll -Path $paths.BackendStandards -Terms ($ruleShape + @(
@@ -67,17 +97,20 @@ Assert-ContainsAll -Path $paths.BackendStandards -Terms ($ruleShape + @(
   '## 14. 单元、Web、数据访问和集成测试', 'Java 21', 'Spring Boot 4.1.0',
   'RuoYi-Vue-Plus 6.0.0-BETA', 'BaseEntity', 'R.ok(String)', 'PageResult.build()',
   'PageQuery(Integer pageSize, Integer pageNum)', 'orderByColumn', '@DataPermission',
-  'clientAccessPath', 'clientIpWhitelist', 'excludeParamNames', 'ruoyi-admin', 'ai-video-user-api', '/api/snail/chat/**'
+  'clientAccessPath', 'clientIpWhitelist', 'excludeParamNames', 'ruoyi-admin',
+  'ai-video-user-api', '/api/snail/chat/**'
 ))
 
 Assert-ContainsAll -Path $paths.FrontendStandards -Terms ($ruleShape + @(
-  '## 1. TypeScript 类型、命名和模块边界', '## 2. React 组件、Props 和组合设计', '## 3. Hooks、副作用和闭包安全',
-  '## 4. 本地状态、服务端状态和请求管理', '## 5. Ant Design 与 ProComponents 组件选型',
-  '## 6. 表单、表格、弹窗、抽屉和反馈', '## 7. 路由、菜单、前端权限和国际化',
-  '## 8. 样式、主题、响应式和无障碍', '## 9. RuoYi API 前端使用边界', '## 10. 性能、错误边界和测试',
-  'TypeScript 6', 'TypeScript 7', 'React 19', 'Umi Max 4', 'Ant Design 6', 'ProComponents 3',
-  'React Query 5', 'Biome 2', 'Vitest 4', 'Oxfmt', 'Oxlint', 'ai-video-webapp',
-  'ai-video-platform-ui', 'src/services', 'passWithNoTests', '/api/snail/chat/**'
+  '## 1. TypeScript 类型、命名和模块边界', '## 2. React 组件、Props 和组合设计',
+  '## 3. Hooks、副作用和闭包安全', '## 4. 本地状态、服务端状态和请求管理',
+  '## 5. Ant Design 与 ProComponents 组件选型', '## 6. 表单、表格、弹窗、抽屉和反馈',
+  '## 7. 路由、菜单、前端权限和国际化', '## 8. 样式、主题、响应式和无障碍',
+  '## 9. RuoYi API 前端使用边界', '## 10. 性能、错误边界和测试',
+  'TypeScript 6', 'TypeScript 7', 'React 19', 'Umi Max 4', 'Ant Design 6',
+  'ProComponents 3', 'React Query 5', 'Biome 2', 'Vitest 4', 'Oxfmt',
+  'Oxlint', 'ai-video-webapp', 'ai-video-platform-ui', 'src/services',
+  'passWithNoTests', '/api/snail/chat/**'
 ))
 
 Assert-ContainsAll -Path $paths.ApiContract -Terms @(
@@ -90,115 +123,143 @@ Assert-NotMatch -Path $paths.ApiContract -Patterns @(
   'PageResult\.build\(', 'R\.ok\(String\)'
 )
 
-foreach ($path in @($paths.Agents, $paths.Rules, $paths.Readme, $paths.DocumentMap)) {
-  Assert-ContainsAll -Path $path -Terms @('docs/BACKEND_CODING_STANDARDS.md', 'docs/FRONTEND_CODING_STANDARDS.md')
-}
-Assert-ContainsAll -Path $paths.BackendGuide -Terms @('BACKEND_CODING_STANDARDS.md', 'ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md')
+Assert-ContainsAll -Path $paths.BackendGuide -Terms @(
+  'BACKEND_CODING_STANDARDS.md', '.agents/skills/ruoyi-plus-ai-coding/SKILL.md'
+)
 Assert-ContainsAll -Path $paths.FrontendGuide -Terms @('FRONTEND_CODING_STANDARDS.md', 'API_CONTRACT.md')
-Assert-NotMatch -Path $paths.BackendGuide -Patterns @(
-  'R<PageResult', 'PageResult\.build\(', 'PageQuery\(', '\borderByColumn\b', '@DataPermission',
-  '@Transactional', '\bclientAccessPath\b', '\bclientIpWhitelist\b', '\bexcludeParamNames\b'
-)
-Assert-NotMatch -Path $paths.FrontendGuide -Patterns @(
-  'R<PageResult', 'data\.records', 'data\.rows', '\bpageNum\b', '\bpageSize\b', '\borderByColumn\b',
-  '\bisAsc\b', '\bclientid\b', 'content-language', '\bBigDecimal\b',
-  'antd\s+(info|doc|demo|token|semantic|lint|doctor)\b', 'ProTable\s*/\s*ProForm\s*约定',
-  '通用组件与状态', '枚举、类型和 API', '状态管理', 'Ant Design AI 辅助'
-)
 Assert-ContainsAll -Path $paths.AiRules -Terms @(
   'docs/BACKEND_CODING_STANDARDS.md', 'docs/FRONTEND_CODING_STANDARDS.md',
-  'scripts/validate-development-standards.ps1', 'ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md'
-)
-Assert-ContainsAll -Path $paths.Agents -Terms @(
-  'docs/BACKEND_CODING_STANDARDS.md', 'docs/FRONTEND_CODING_STANDARDS.md',
-  'scripts/validate-development-standards.ps1', 'ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md'
+  'scripts/validate-development-standards.ps1', '.agents/skills/ruoyi-plus-ai-coding/SKILL.md'
 )
 Assert-ContainsAll -Path $paths.Architecture -Terms @('BACKEND_CODING_STANDARDS.md', 'FRONTEND_CODING_STANDARDS.md')
 
-foreach ($path in @($paths.Agents, $paths.Rules, $paths.Readme, $paths.DocumentMap)) {
-  Assert-ContainsAll -Path $path -Terms @('docs/DECISIONS.md', 'docs/PLAN.md', 'docs/EXECUTION.md', 'docs/tasks/')
-}
-Assert-ContainsAll -Path $paths.Plan -Terms @(
-  'NOT_STARTED', 'IN_PROGRESS', 'VERIFYING', 'BLOCKED', 'DONE', 'NEEDS_REVALIDATION', 'DEFERRED',
-  'EXECUTION.md', 'tasks/'
+Assert-ContainsAll -Path $paths.Agents -Terms @(
+  'docs/EXECUTION.md', 'docs/BACKEND_CODING_STANDARDS.md',
+  'docs/FRONTEND_CODING_STANDARDS.md', 'scripts/validate-development-standards.ps1',
+  '.agents/skills/ruoyi-plus-ai-coding/SKILL.md', '.agents/skills/antd/SKILL.md'
 )
-Assert-ContainsAll -Path $paths.Execution -Terms @(
-  '当前阶段', '当前任务卡', '状态', '证据索引', '下一条准确动作', 'PASS', 'FAIL', 'NOT_RUN'
+Assert-NotMatch -Path $paths.Agents -Patterns @(
+  'docs/tasks/', 'ai-video-api/\.codex/skills/', '## Superpowers 项目模板'
 )
-Assert-NotMatch -Path $paths.Execution -Patterns @('完成后重新记录', '稍后补充', 'TODO：更新当前')
-Assert-ContainsAll -Path $paths.TasksReadme -Terms @(
-  'PROJECT.md', 'DECISIONS.md', 'PLAN.md', 'EXECUTION.md', 'DRAFT', 'ACTIVE', 'ACCEPTED'
-)
+Assert-NotMatch -Path $paths.Rules -Patterns @('docs/tasks/', 'ai-video-api/\.codex/skills/')
 
-$taskCards = @(Get-ChildItem -LiteralPath (Join-Path $docsRoot 'tasks') -Filter '*.md' -File |
-  Where-Object { $_.Name -match '^T[0-7]-.*\.md$' })
-if ($taskCards.Count -ne 8) {
-  Add-ValidationError "docs/tasks 必须恰好包含 T0-T7 八张阶段卡，当前为 $($taskCards.Count) 张"
+if (Test-Path -LiteralPath $paths.Claude -PathType Leaf) {
+  $rootClaude = (Read-Utf8File -Path $paths.Claude).Trim()
+  if ($rootClaude -ne '@AGENTS.md') {
+    Add-ValidationError '根 CLAUDE.md 必须是仅导入 @AGENTS.md 的薄入口'
+  }
 }
-foreach ($taskCard in $taskCards) {
-  Assert-ContainsAll -Path $taskCard.FullName -Terms @(
-    '卡片状态', '路线状态', '风险等级及原因', '前置阶段', '权威来源', '允许影响范围',
-    '实施/审查安排', '固定交付格式', '## 1. 目标', '## 2. 用户可见行为', '## 3. 修改边界',
-    '## 4. 非目标', '## 5. 验收场景', '## 6. 验证与证据', '## 验收记录'
-  )
+if (Test-Path -LiteralPath $paths.WebClaude -PathType Leaf) {
+  $webClaude = ((Read-Utf8File -Path $paths.WebClaude).Trim() -replace "`r`n", "`n")
+  if ($webClaude -ne "@../../AGENTS.md`n@AGENTS.md") {
+    Add-ValidationError 'Webapp CLAUDE.md 必须只导入根与局部 AGENTS.md'
+  }
 }
+if (Test-Path -LiteralPath $paths.WebAgents -PathType Leaf) {
+  $webAgents = (Read-Utf8File -Path $paths.WebAgents).Trim()
+  if ($webAgents -eq 'CLAUDE.md' -or $webAgents.Length -lt 80) {
+    Add-ValidationError 'Webapp AGENTS.md 仍是无效裸转发或缺少局部规则'
+  }
+}
+
+$skillRoot = Join-Path $projectRoot '.agents\skills'
+$requiredSkills = @('brainstorming', 'writing-plans', 'ruoyi-plus-ai-coding', 'frontend-crud-coding', 'antd')
+foreach ($skillName in $requiredSkills) {
+  $skillPath = Join-Path (Join-Path $skillRoot $skillName) 'SKILL.md'
+  Assert-FileExists -Path $skillPath
+  Assert-ContainsAll -Path $skillPath -Terms @('---', 'name:', 'description:')
+  Assert-NotMatch -Path $skillPath -Patterns @('\b[A-Za-z]:\\')
+}
+Assert-FileExists -Path (Join-Path $skillRoot 'brainstorming\visual-companion.md')
+$codexAntdSkill = Join-Path $skillRoot 'antd\SKILL.md'
+if ((Test-Path -LiteralPath $codexAntdSkill -PathType Leaf) -and
+    (Test-Path -LiteralPath $paths.ClaudeAntdSkill -PathType Leaf)) {
+  $codexAntdHash = (Get-FileHash -LiteralPath $codexAntdSkill -Algorithm SHA256).Hash
+  $claudeAntdHash = (Get-FileHash -LiteralPath $paths.ClaudeAntdSkill -Algorithm SHA256).Hash
+  if ($codexAntdHash -ne $claudeAntdHash) {
+    Add-ValidationError 'Codex 与 Claude 的 antd Skill 镜像已漂移'
+  }
+}
+Assert-ContainsAll -Path $paths.ClaudeProUpgradeSkill -Terms @(
+  'Use only when the user explicitly asks',
+  'Do not use for ordinary business migrations'
+)
+if (Test-Path -LiteralPath (Join-Path $projectRoot '.codex\skills')) {
+  $legacySkillFiles = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot '.codex\skills') -Recurse -File -Force)
+  if ($legacySkillFiles.Count -gt 0) {
+    Add-ValidationError "根 .codex/skills 仍含 $($legacySkillFiles.Count) 个文件，应迁移到 .agents/skills 或删除"
+  }
+}
+
+Assert-ContainsAll -Path $paths.Plan -Terms @('T0', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7')
+Assert-NotMatch -Path $paths.Plan -Patterns @('docs/tasks/')
+Assert-ContainsAll -Path $paths.Execution -Terms @(
+  '当前阶段', '当前详细计划', '状态', '证据索引', '下一条准确动作', 'PASS', 'FAIL', 'NOT_RUN'
+)
+Assert-NotMatch -Path $paths.Execution -Patterns @(
+  'docs/tasks/', '完成后重新记录', '稍后补充', 'TODO：更新当前'
+)
 
 if (Test-Path -LiteralPath $paths.Execution -PathType Leaf) {
   $executionContent = Read-Utf8File -Path $paths.Execution
-  $currentStageMatch = [regex]::Match($executionContent, '\|\s*当前阶段\s*\|\s*(?<stage>T[0-9]+)(?:\s*[:：][^|]*)?\|')
-  $executionStatusMatch = [regex]::Match($executionContent, '\|\s*状态\s*\|\s*`(?<status>[A-Z_]+)`\s*\|')
-  $currentTaskMatch = [regex]::Match($executionContent, 'docs/tasks/(?<task>[A-Za-z0-9._-]+\.md)')
-  $currentPlanMatch = [regex]::Match($executionContent, 'docs/superpowers/plans/(?<plan>[A-Za-z0-9._-]+\.md)')
-  if (-not $currentStageMatch.Success) {
-    Add-ValidationError "$($paths.Execution) 未声明当前 Tn 阶段"
+  $nextActionCount = [regex]::Matches($executionContent, '下一条准确动作').Count
+  if ($nextActionCount -ne 1) {
+    Add-ValidationError "$($paths.Execution) 必须恰好包含一个“下一条准确动作”，当前为 $nextActionCount 个"
   }
-  if (-not $executionStatusMatch.Success) {
-    Add-ValidationError "$($paths.Execution) 未声明标准当前状态"
+
+  $currentStageMatch = [regex]::Match($executionContent, '(?m)^\|\s*当前阶段\s*\|\s*(?<stage>T[0-9]+)(?:\s*[:：][^|]*)?\|\s*$')
+  $executionStatusMatch = [regex]::Match($executionContent, '(?m)^\|\s*状态\s*\|\s*`(?<status>[A-Z_]+)`\s*\|\s*$')
+  $currentPlanMatches = [regex]::Matches(
+    $executionContent,
+    '(?m)^\|\s*当前详细计划\s*\|\s*`(?<plan>docs/superpowers/plans/[A-Za-z0-9._/-]+\.md)`[^|]*\|\s*$'
+  )
+  $allPlanReferences = [regex]::Matches(
+    $executionContent,
+    'docs/superpowers/plans/[A-Za-z0-9._/-]+\.md'
+  )
+  if (-not $currentStageMatch.Success) { Add-ValidationError "$($paths.Execution) 未声明当前 Tn 阶段" }
+  $allowedExecutionStatuses = @(
+    'NOT_STARTED', 'IN_PROGRESS', 'VERIFYING', 'BLOCKED',
+    'DONE', 'NEEDS_REVALIDATION', 'DEFERRED'
+  )
+  if (-not $executionStatusMatch.Success -or
+      $allowedExecutionStatuses -notcontains $executionStatusMatch.Groups['status'].Value) {
+    Add-ValidationError "$($paths.Execution) 未声明允许的当前状态"
   }
-  if (-not $currentTaskMatch.Success) {
-    Add-ValidationError "$($paths.Execution) 未引用当前 docs/tasks/Tn-*.md"
+  if ($currentPlanMatches.Count -ne 1 -or $allPlanReferences.Count -ne 1) {
+    Add-ValidationError "$($paths.Execution) 必须在“当前详细计划”字段中唯一绑定一个 runbook"
   }
   else {
-    $currentTaskPath = Join-Path (Join-Path $docsRoot 'tasks') $currentTaskMatch.Groups['task'].Value
-    Assert-FileExists -Path $currentTaskPath
-    if ($currentStageMatch.Success -and $executionStatusMatch.Success -and (Test-Path -LiteralPath $currentTaskPath -PathType Leaf)) {
-      $stage = $currentStageMatch.Groups['stage'].Value
-      $executionStatus = $executionStatusMatch.Groups['status'].Value
-      if (-not $currentTaskMatch.Groups['task'].Value.StartsWith("$stage-", [StringComparison]::OrdinalIgnoreCase)) {
-        Add-ValidationError "$($paths.Execution) 当前阶段 $stage 与任务卡 $($currentTaskMatch.Groups['task'].Value) 不一致"
-      }
-
-      $taskContent = Read-Utf8File -Path $currentTaskPath
-      $taskStatusMatch = [regex]::Match($taskContent, '\|\s*路线状态\s*\|\s*`(?<status>[A-Z_]+)`\s*\|')
-      if (-not $taskStatusMatch.Success -or $taskStatusMatch.Groups['status'].Value -ne $executionStatus) {
-        Add-ValidationError "$currentTaskPath 路线状态与 EXECUTION.md 不一致"
-      }
-
-      $planContent = Read-Utf8File -Path $paths.Plan
-      $escapedStage = [regex]::Escape($stage)
-      $planStagePattern = '\|\s*\[' + $escapedStage + '\]\([^)]+\)[^\r\n]*\|\s*`(?<status>[A-Z_]+)`\s*\|'
-      $planStageMatch = [regex]::Match($planContent, $planStagePattern)
-      if (-not $planStageMatch.Success -or $planStageMatch.Groups['status'].Value -ne $executionStatus) {
-        Add-ValidationError "$($paths.Plan) 的 $stage 状态与 EXECUTION.md 不一致"
+    $currentPlanRelativePath = $currentPlanMatches[0].Groups['plan'].Value.Replace('/', '\')
+    $currentPlanPath = Join-Path $projectRoot $currentPlanRelativePath
+    Assert-FileExists -Path $currentPlanPath
+    Assert-ContainsAll -Path $currentPlanPath -Terms @('目标', '非目标', '验收', '停止条件')
+    if ($currentStageMatch.Success -and $currentStageMatch.Groups['stage'].Value -eq 'T1') {
+      foreach ($index in 0..9) {
+        $stepId = "T1.$index"
+        Assert-ContainsAll -Path $paths.Execution -Terms @($stepId)
+        Assert-ContainsAll -Path $currentPlanPath -Terms @($stepId)
       }
     }
   }
-  if (-not $currentPlanMatch.Success) {
-    Add-ValidationError "$($paths.Execution) 未引用当前详细施工计划"
-  }
-  else {
-    $currentPlanPath = Join-Path (Join-Path $docsRoot 'superpowers\plans') $currentPlanMatch.Groups['plan'].Value
-    Assert-FileExists -Path $currentPlanPath
-  }
 }
 
-$activeRootFiles = @($paths.Agents, $paths.Rules, $paths.Readme) | ForEach-Object { Get-Item -LiteralPath $_ }
+$activeRootFiles = @($paths.Agents, $paths.Rules, $paths.Readme) |
+  ForEach-Object { Get-Item -LiteralPath $_ }
 $activeDocs = Get-ChildItem -LiteralPath $docsRoot -Recurse -Filter '*.md' -File |
   Where-Object { $_.FullName -notmatch '[\\/]docs[\\/]superpowers[\\/](specs|plans)[\\/]' }
 $activeFiles = @($activeRootFiles) + @($activeDocs)
 foreach ($file in $activeFiles) {
   $content = Read-Utf8File -Path $file.FullName
-  if ($content -match '(?<![A-Za-z0-9_])(?:docs/)?CODING_STANDARDS\.md') { Add-ValidationError "活动文档仍引用旧规范：$($file.FullName)" }
+  if ($content -match '(?<![A-Za-z0-9_])(?:docs/)?CODING_STANDARDS\.md') {
+    Add-ValidationError "活动文档仍引用旧规范：$($file.FullName)"
+  }
+  if ($content -match 'docs/tasks/') {
+    Add-ValidationError "活动文档仍引用已删除阶段卡：$($file.FullName)"
+  }
+  if ($content -match '(?:^|[\\/])\.codex[\\/]skills[\\/]') {
+    Add-ValidationError "活动文档仍引用旧 .codex Skill 路径：$($file.FullName)"
+  }
 }
 
 $linkPattern = '(?<!\!)\[[^\]]+\]\((?<target>[^)]+)\)'
@@ -211,13 +272,21 @@ foreach ($file in $activeFiles) {
     if ([string]::IsNullOrWhiteSpace($pathPart)) { continue }
     try {
       $resolved = [System.IO.Path]::GetFullPath((Join-Path $file.DirectoryName $pathPart))
-      if (-not (Test-Path -LiteralPath $resolved)) { Add-ValidationError "本地链接不存在：$($file.FullName) -> $target" }
-    } catch { Add-ValidationError "本地链接无效：$($file.FullName) -> $target" }
+      if (-not (Test-Path -LiteralPath $resolved)) {
+        Add-ValidationError "本地链接不存在：$($file.FullName) -> $target"
+      }
+    }
+    catch {
+      Add-ValidationError "本地链接无效：$($file.FullName) -> $target"
+    }
   }
 }
 
 if ($errors.Count -gt 0) {
-  foreach ($validationError in $errors) { [Console]::Error.WriteLine("ERROR: $validationError") }
+  foreach ($validationError in $errors) {
+    [Console]::Error.WriteLine("ERROR: $validationError")
+  }
   exit 1
 }
+
 Write-Output 'DEVELOPMENT_STANDARDS_OK'

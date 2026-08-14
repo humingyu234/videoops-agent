@@ -9,7 +9,7 @@
 - 必须复用统一认证、账号归属、任务、素材、文件与数字人生成链。Agent 是这些能力上方的控制面，不得另建一套虚假的任务、资产或生成状态。
 - 比赛演示中的每个“自主”声明都必须有运行轨迹或测试证据；规则脚本、演示供应商、静态 mock 和真实模型必须明确标注，禁止混称。
 - 自动重试默认最多两次；超过预算、连续不改善、出现安全风险或需要主观取舍时必须停止并请求人工决策。
-- 范围调整先更新 `docs/PROJECT.md` 和必要的 `docs/DECISIONS.md`；实现拆分和验收标准先更新 `docs/PLAN.md` 与对应任务卡；实际进度、证据和下一动作只更新 `docs/EXECUTION.md`，再进入编码。
+- 范围调整先更新 `docs/PROJECT.md` 和必要的 `docs/DECISIONS.md`；阶段路线或依赖变化才更新 `docs/PLAN.md`；实际进度、证据和下一动作只更新 `docs/EXECUTION.md`。
 
 ## 技术边界
 
@@ -47,7 +47,7 @@
 - 前端实现必须优先使用 Ant Design、Ant Design Pro / ProComponents 和项目既有业务组件。
 - 管理类页面优先使用 ProComponents 的列表、表格、筛选、分页、详情和表单范式。
 - 后端实现必须优先复用 RuoYi-Vue-Plus 6.x 的响应、分页、权限、字典、文件、缓存、日志、Mapper、对象转换和代码生成能力。
-- 涉及后端代码前，必须先读取 RuoYi Plus AI Coding skill；本地 skill 不存在时，必须说明并查官方路径。
+- 涉及后端代码前，必须先读取 `.agents/skills/ruoyi-plus-ai-coding/SKILL.md`；本地 skill 不存在时，必须说明并查官方路径。
 - 框架能力已覆盖的内容，不得自行实现重复返回体、分页结构、权限体系、文件体系、字典体系或 Mapper 基类。
 
 ## RuoYi 业务对象与分层硬边界
@@ -101,23 +101,10 @@
 - 开发库基线数据初始化的唯一入口是 `docs/sql/ai-video/mysql/20260810_00_development_database_initialization.sql`。必须使用 `ai-video-user-api/src/main/resources/application-dev.yml` 中最终生效的 `spring.datasource.dynamic.datasource.master` 连接执行，禁止改用 `codex-local-stack.yml`、Docker 配置或其他旁路连接；SQL 在数据库客户端当前选中的数据库中执行，不硬编码或校验库名。具体数据范围与幂等规则见 `docs/DEVELOPMENT_DATABASE_INITIALIZATION.md`。
 - 本规则仅约束开发和测试环境，不改变生产部署的基础设施选型；两个启动应用仍必须分别执行路由暴露与安全边界 Smoke Test（冒烟测试）。
 
-## AI 协作规则
+## 施工与验收硬边界
 
-- docs/AI_AGENT_GOVERNANCE.md 是项目 AI 协作、风险分级、质量门禁、并发、审查和 Token 治理的唯一权威来源，适用于所有计划、阶段、工具和参与者；不得以 Token 预算、进度或计划编号削减质量门禁。
-- 必须执行该治理规范的强制收口规则：一轮完整审查后只允许一次定向复核；同一问题最多两次自动返工，同一无变化失败最多重试两次，普通轮询连续两次无变化即停止；未经用户批准不得扩大范围或派生新任务。
-- 用户要求立即完成或停止扩展时，必须停止新增探索、智能体和审查，只关闭已确认的必须修复项并运行一次必要验证；无法通过时报告未完成，不得无限继续。
-- 需求、想法、PRD 片段或模块规格必须通过 superpowers `brainstorming` 梳理。
-- 实现计划必须通过 superpowers `writing-plans` 生成。
-- 使用 `brainstorming` / `writing-plans` 时必须自动读取 `docs/superpowers/templates/` 下的项目模板。
-- 不要求用户复制模板；如果需求范围、模块名或规格路径无法判断，只问一个澄清问题。
-- 模块规格和实现计划由 superpowers 按自身规则保存，不在 `RULES.md` 固定文件路径。
-- 施工任务开始前必须核对真实项目路径、HEAD、工作区、`docs/EXECUTION.md` 和当前 `docs/tasks/` 任务卡；未记录改动不得覆盖，未来任务卡不得在未核对当前源码时直接执行。
-
-## 验收规则
-
-- 验收以 PRD、superpowers 生成的模块规格、实现计划和公共契约为准。
-- 实现完成前必须运行对应验证命令，并记录无法验证的原因。
-- 前端变更至少验证类型检查、lint 或对应测试；无法运行时必须说明原因。
-- 后端变更至少验证 Maven 相关模块构建、测试或最小可行校验；无法运行时必须说明原因。
-- 不能把“未验证”描述成“已完成”。
-- 没有与当前源码状态匹配的测试、运行或真实边界证据，不得把任务标记为 `DONE`；相关源码、配置、环境或验收标准变化后必须标记 `NEEDS_REVALIDATION`。
+- 会修改仓库、环境或进度时，先核对真实路径、分支、HEAD、工作区并读取 `docs/EXECUTION.md`；实际执行只继续读取其中指向的当前详细计划。未记录改动不得覆盖。
+- 需求规格或实现计划只在当前任务明确需要时创建；对应 skill 统一位于 `.agents/skills/brainstorming/SKILL.md` 与 `.agents/skills/writing-plans/SKILL.md`，不得成为所有小改动的固定前置流程。
+- 前端变更运行与改动匹配的类型检查、lint 或测试；后端变更运行相关 Maven 模块构建、测试或最小可行校验。无法运行时必须说明原因和影响。
+- 没有与当前源码状态匹配的测试、运行或真实边界证据，不得把任务标记为 `DONE`；源码、配置、环境或验收标准变化后必须标记 `NEEDS_REVALIDATION`。
+- AI 总结、静态阅读、Mock 或“看起来正常”不能单独证明真实 Provider、外部边界或端到端能力；秘密和隐私不得进入日志、截图或证据。

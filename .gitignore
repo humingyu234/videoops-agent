@@ -90,6 +90,9 @@ ai-video-ui/ai-video-webapp/tmp/
 /.codex/tmp/
 .pnpm-store/
 .agents/
+!/.agents/
+!/.agents/skills/
+!/.agents/skills/**
 .superpowers/
 .tmp/
 .runtime/

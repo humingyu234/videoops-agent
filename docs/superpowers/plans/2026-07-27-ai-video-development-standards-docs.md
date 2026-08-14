@@ -97,9 +97,9 @@
 - 参考：`docs/CODING_STANDARDS.md`
 - 参考：`docs/BACKEND_GUIDE.md`
 - 参考：`docs/DOMAIN_MODEL.md`
-- 参考：`ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md`
-- 参考：`ai-video-api/.codex/skills/ruoyi-plus-ai-coding/references/backend.md`
-- 参考：`ai-video-api/.codex/skills/ruoyi-plus-ai-coding/references/examples.md`
+- 参考：`.agents/skills/ruoyi-plus-ai-coding/SKILL.md`
+- 参考：`.agents/skills/ruoyi-plus-ai-coding/references/backend.md`
+- 参考：`.agents/skills/ruoyi-plus-ai-coding/references/examples.md`
 
 - [ ] **步骤 1：验证目标文件尚不存在并核对事实基线**
 
@@ -981,7 +981,7 @@ git commit -m "docs: align API contract with RuoYi 6"
 必须修正本地 skill 路径：
 
 ```text
-ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md
+.agents/skills/ruoyi-plus-ai-coding/SKILL.md
 ```
 
 以下内容不再在 Guide 中维护完整规则正文：
@@ -1027,7 +1027,7 @@ $requiredBackend = @(
   'API_CONTRACT.md',
   'DOMAIN_MODEL.md',
   'ASYNC_TASKS.md',
-  'ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md'
+  '.agents/skills/ruoyi-plus-ai-coding/SKILL.md'
 )
 $requiredFrontend = @(
   'FRONTEND_CODING_STANDARDS.md',
@@ -1145,7 +1145,7 @@ rg -n 'docs/CODING_STANDARDS\.md' `
 `AGENTS.md` 只更新阅读顺序和任务路由：
 
 - 前端任务读取 `docs/FRONTEND_GUIDE.md`、`docs/FRONTEND_CODING_STANDARDS.md` 和 `docs/API_CONTRACT.md`。
-- 后端任务读取 `ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md`、`docs/BACKEND_GUIDE.md`、`docs/BACKEND_CODING_STANDARDS.md` 和 `docs/API_CONTRACT.md`。
+- 后端任务读取 `.agents/skills/ruoyi-plus-ai-coding/SKILL.md`、`docs/BACKEND_GUIDE.md`、`docs/BACKEND_CODING_STANDARDS.md` 和 `docs/API_CONTRACT.md`。
 - 规范文档变更运行 `scripts/validate-development-standards.ps1`。
 - 不复制手册正文。
 - 不添加、删除或修改原工作树的 Ant Design CLI 用户区块。
@@ -1393,7 +1393,7 @@ foreach ($path in $navigationFiles) {
 
 Assert-ContainsAll -Path $paths.BackendGuide -Terms @(
   'BACKEND_CODING_STANDARDS.md',
-  'ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md'
+  '.agents/skills/ruoyi-plus-ai-coding/SKILL.md'
 )
 Assert-ContainsAll -Path $paths.FrontendGuide -Terms @(
   'FRONTEND_CODING_STANDARDS.md',
@@ -1432,13 +1432,13 @@ Assert-ContainsAll -Path $paths.AiRules -Terms @(
   'docs/BACKEND_CODING_STANDARDS.md',
   'docs/FRONTEND_CODING_STANDARDS.md',
   'scripts/validate-development-standards.ps1',
-  'ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md'
+  '.agents/skills/ruoyi-plus-ai-coding/SKILL.md'
 )
 Assert-ContainsAll -Path $paths.Agents -Terms @(
   'docs/BACKEND_CODING_STANDARDS.md',
   'docs/FRONTEND_CODING_STANDARDS.md',
   'scripts/validate-development-standards.ps1',
-  'ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md'
+  '.agents/skills/ruoyi-plus-ai-coding/SKILL.md'
 )
 Assert-ContainsAll -Path $paths.Architecture -Terms @(
   'BACKEND_CODING_STANDARDS.md',

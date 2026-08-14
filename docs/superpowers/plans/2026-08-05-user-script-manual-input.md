@@ -13,7 +13,7 @@
 ## 0. 权威输入、已冻结边界与实施前检查
 
 - 规格：`docs/superpowers/specs/2026-08-05-user-script-manual-input-design.md`
-- 后端模式：`ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md`、generator 模板、现有 `portrait` 聚合。
+- 后端模式：`.agents/skills/ruoyi-plus-ai-coding/SKILL.md`、generator 模板、现有 `portrait` 聚合。
 - 前端模式：`src/services/ai-video/portrait/*`、`PortraitLibraryView.tsx`、统一 `RuoYiAdapter`。
 - 本计划生成时 `.agents/skills/antd/SKILL.md` 不存在；实施 Task 7 前先再次检查。仍不存在时，运行项目已安装的 `@ant-design/cli` 查询 `Modal`、`Form`、`Input`、`Pagination`、`Empty` 和 `Alert`，并以当前仓库 Ant Design 6 代码为兼容基线。
 - 当前工作树已经存在用户自己的肖像、资产、声音、公共契约和 `digital-human-studio` 未提交修改。执行者不得还原、覆盖或顺手格式化这些改动；应使用 `using-git-worktrees` 从包含规格与本计划的 HEAD 创建隔离工作树。若隔离工作树仍需消费这些未提交契约，先让这些变更形成可引用提交，再开始 Task 1。

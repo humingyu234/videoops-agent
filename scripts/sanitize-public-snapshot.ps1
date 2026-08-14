@@ -7,9 +7,14 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $resolvedRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
-$expectedRoot = 'D:\project\videoops-agent'
-if ($resolvedRoot -ne $expectedRoot) {
+$scriptRepositoryRoot = (Resolve-Path -LiteralPath (Split-Path -Parent $PSScriptRoot)).Path
+if ($resolvedRoot -ne $scriptRepositoryRoot) {
     throw "Refusing to sanitize an unexpected directory: $resolvedRoot"
+}
+foreach ($marker in @('.git', 'AGENTS.md', 'docs\PROJECT.md')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $resolvedRoot $marker))) {
+        throw "Refusing to sanitize a directory without repository marker '$marker': $resolvedRoot"
+    }
 }
 
 $sensitiveKeys = @(

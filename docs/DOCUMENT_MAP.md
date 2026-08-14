@@ -1,121 +1,77 @@
-# 文档地图
+# 文档与 Skill 路由
 
-本文档是 `docs/` 的入口地图，说明项目技术栈、包边界、阅读顺序和文档边界。具体规则以各专项文档为准。
+本文只在无法从根 `AGENTS.md` 判断专项资料时读取，不是冷启动必读清单。
 
-## 项目技术栈
+## 最小施工链
 
-用户端：
+1. Codex 自动读取根 `AGENTS.md`。
+2. 会修改仓库、开发环境或施工进度时，读取 `docs/EXECUTION.md`。
+3. 实际执行施工步骤时，只继续读取 `docs/EXECUTION.md` 指向的当前详细计划。
+4. `docs/PLAN.md` 只在调整阶段路线、范围或依赖时读取。
+5. 纯解释、只读审计和局部检索只加载问题直接涉及的源码与文档。
 
-- 桌面壳层：Electron，必需独立薄包。
-- Web 前端：React + TypeScript。
-- UI 体系：Ant Design、Ant Design Pro / ProComponents。
-- 前端工程：Ant Design Pro / Umi Max 结构。
+`docs/EXECUTION.md` 是当前阶段、风险、阻塞、证据和唯一下一动作的实时来源。入口、README 和其他规范不复制这些动态内容。
 
-后端 API：
+## Skill 路由
 
-- Maven 根工程：`ai-video-api`，基于 RuoYi-Vue-Plus 6.x 二开。
-- 启动模块：`ruoyi-admin`、`ai-video-user-api`，可单独部署。
-- ORM 与分页：MyBatis-Plus、RuoYi-Vue-Plus `PageQuery` / `PageResult`。
-- 认证权限：复用 RuoYi-Vue-Plus / Sa-Token / 权限注解体系。
-- 文件能力：复用 RuoYi-Vue-Plus OSS / 文件能力。
-- 异步任务：长耗时 AI 生成统一通过后端任务模型承载。
+项目 Skill 统一从仓库根 `.agents/skills/` 读取：
 
-管理端 / 运营端：
+| 任务 | Skill | 后续资料 |
+| --- | --- | --- |
+| 创建或大改需求规格 | `.agents/skills/brainstorming/SKILL.md` | 与本次范围直接相关的产品、决策和契约章节 |
+| 创建或更新实现计划 | `.agents/skills/writing-plans/SKILL.md` | 已确认规格、当前源码和 `docs/EXECUTION.md` |
+| RuoYi 后端 | `.agents/skills/ruoyi-plus-ai-coding/SKILL.md` | `ai-video-api/AGENTS.md`、后端指南/规范及相关契约章节 |
+| 管理端 CRUD 前端 | `.agents/skills/frontend-crud-coding/SKILL.md` | 前端指南/规范及相关 API 章节 |
+| Ant Design React 前端 | `.agents/skills/antd/SKILL.md` | 最近的嵌套 `AGENTS.md`、前端规范和官方组件资料 |
 
-- UI：React + TypeScript + Ant Design / ProComponents。
-- 前端工作区：`ai-video-ui`，统一存放用户端 Web 与管理端/运营端 UI 包。
-- 管理端/运营端前端工程：`ai-video-ui/ai-video-platform-ui`，与用户端 Web 分包管理。
+规格和计划 Skill 只在任务确实要求对应产物时使用，不作为文档小改、解释、诊断或既有计划执行的固定前置流程。路径缺失时明确报告，不得凭记忆假装已读取。
 
-AI 协作：
-
-- 协作、并发、审查与 Token 治理：docs/AI_AGENT_GOVERNANCE.md。
-- 需求与规格：superpowers `brainstorming`。
-- 实现计划：superpowers `writing-plans`。
-- 后端编码：优先参考 RuoYi Plus AI Coding skill。
-- 前端组件：优先参考 Ant Design 官方文档、AI 文档、CLI 或 MCP。
-
-## 包边界
-
-```text
-ai-video-desktop/       # 用户端 Electron 壳层，必需包，待创建
-ai-video-ui/            # 前端工作区
-  ai-video-webapp/      # 用户端 Ant Design Pro Web
-  ai-video-platform-ui/ # 管理端/运营端前端页面
-ai-video-api/           # RuoYi-Vue-Plus 后端 Maven 根工程
-  ruoyi-admin/          # 管理端/运营端 API 启动模块，可单独部署
-  ai-video-user-api/    # 用户端 API 启动模块，可单独部署
-docs/                   # 项目公共规则、契约和指南
-```
-
-- `ai-video-desktop` 只负责窗口、preload bridge、本地能力、更新和加载 Web；目录创建前，不要假定已有 Electron 代码可修改。
-- `ai-video-ui` 只做前端包分组，不承载业务状态、接口契约或运行时代码。
-- `ai-video-ui/ai-video-webapp` 负责用户端路由、页面、组件、状态和后端 API 调用。
-- `ai-video-api/ai-video-user-api` 负责用户端接口，可单独部署。
-- `ai-video-api/ruoyi-admin` 负责管理端/运营端接口，可单独部署。
-- `ai-video-api` 下应沉淀共享领域模块，统一任务、素材、模板、文件、额度和外部 AI 服务编排等后端能力。
-- `ai-video-ui/ai-video-platform-ui` 负责管理端/运营端前端页面，不承载用户端 Electron Web 页面。
-- 公共规则和跨端契约放在 `docs/`，模块级规格和实现计划由 superpowers 按流程生成。
-
-## 先读什么
-
-- AI Agent：先读 `AGENTS.md`、`docs/PROJECT.md`、`docs/DECISIONS.md`、`docs/PLAN.md` 和 `docs/BASELINE.md`；施工任务继续读 `docs/EXECUTION.md` 及当前任务卡，再按任务类型读取专项文档。
-- 人类开发：先读 `README.md`、`docs/PROJECT.md`、`docs/DECISIONS.md`、`docs/PLAN.md`、`docs/EXECUTION.md`、`RULES.md` 和 `docs/ARCHITECTURE.md`，再读当前任务卡和对应前端、后端或契约文档。
-- 进入具体模块开发前：先通过 superpowers 生成或确认模块规格和实现计划。
+`ai-video-ui/ai-video-webapp/.claude/skills/antd` 是给 Claude Code 的兼容镜像，不是第六个 Codex Skill；规范校验会比较它与根 `antd` Skill 的 SHA-256，防止双份内容漂移。该目录中的 `pro-upgrade` 只在用户明确要求升级 Ant Design Pro 时使用，不进入日常施工路由。
 
 ## 按任务选择文档
 
-- 改 AI 协作、风险分级、质量门禁、并发、审查或 Token 治理：先读 docs/AI_AGENT_GOVERNANCE.md，再读 docs/AI_CODING_RULES.md、docs/superpowers/templates/。
-- 做前端页面：`docs/FRONTEND_GUIDE.md`、`docs/FRONTEND_CODING_STANDARDS.md`、`docs/API_CONTRACT.md`。
-- 做 Electron 能力：`docs/FRONTEND_GUIDE.md` 的 Electron 章节、`docs/ARCHITECTURE.md`。
-- 做用户端 API：`ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md`、`docs/BACKEND_GUIDE.md`、`docs/BACKEND_CODING_STANDARDS.md`、`docs/API_CONTRACT.md`、`docs/DOMAIN_MODEL.md`。
-- 做管理端/运营端 API：`ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md`、`docs/BACKEND_GUIDE.md`、`docs/BACKEND_CODING_STANDARDS.md`、`docs/API_CONTRACT.md`、`docs/DOMAIN_MODEL.md`。
-- 做管理端/运营端 UI：先参考 `ai-video-ui/ai-video-platform-ui` 既有结构，再对照 `docs/FRONTEND_GUIDE.md` 与 `docs/FRONTEND_CODING_STANDARDS.md` 的 Ant Design / ProComponents 规则。
-- 做异步生成任务：`docs/ASYNC_TASKS.md`、`docs/API_CONTRACT.md`、`docs/DOMAIN_MODEL.md`。
-- 改字段、状态、字典或表设计：`docs/DOMAIN_MODEL.md`、`docs/API_CONTRACT.md`。
-- 改 AI 协作流程、brainstorming 或 writing-plans 模板规则：先读 docs/AI_AGENT_GOVERNANCE.md；涉及风险、质量门禁、并发、审查或 Token 语义时必须先更新治理主文档，再更新 docs/AI_CODING_RULES.md 或 docs/superpowers/templates/ 的薄接入。
-- 改前端代码风格：`docs/FRONTEND_CODING_STANDARDS.md`。
-- 改后端代码风格：`docs/BACKEND_CODING_STANDARDS.md`。
-- 改后端模块目录、业务对象职责或分层方式：必须同时阅读 `docs/BACKEND_GUIDE.md`、`docs/BACKEND_CODING_STANDARDS.md`、`docs/DOMAIN_MODEL.md` 和本地 RuoYi Plus AI Coding skill；RuoYi 标准目录是硬约束，不能引入 DDD、整洁架构或六边形架构的平行业务层。
-- 初始化或校验本机开发数据库基线数据：`docs/DEVELOPMENT_DATABASE_INITIALIZATION.md`。
+- 产品目标、范围或最终完成标准：`docs/PROJECT.md`；形成新取舍时同步 `docs/DECISIONS.md`。
+- 阶段路线、范围或依赖：`docs/PLAN.md`；实时进度仍只写 `docs/EXECUTION.md`。
+- 当前施工、环境操作、阻塞、证据或下一动作：`docs/EXECUTION.md` 及其指向的唯一详细计划。
+- 系统分层、Electron、安全边界或关键数据流：`docs/ARCHITECTURE.md` 的相关章节。
+- API 路径、响应、鉴权、上传下载或错误码：`docs/API_CONTRACT.md` 的相关章节。
+- 业务对象、字段、状态、字典、归属或表设计：`docs/DOMAIN_MODEL.md` 的相关章节。
+- 任务创建、幂等、回调、轮询、重试、终态或额度：`docs/ASYNC_TASKS.md` 的相关章节。
+- 用户端 React 页面：`ai-video-ui/ai-video-webapp/AGENTS.md`、`docs/FRONTEND_GUIDE.md` 和 `docs/FRONTEND_CODING_STANDARDS.md` 的相关章节。
+- 管理端/运营端 UI：先看 `ai-video-ui/ai-video-platform-ui` 既有结构，再读前端指南/规范的相关章节。
+- 后端 API 或共享模块：`ai-video-api/AGENTS.md`、`docs/BACKEND_GUIDE.md` 和 `docs/BACKEND_CODING_STANDARDS.md` 的相关章节。
+- 开发数据库初始化：`docs/DEVELOPMENT_DATABASE_INITIALIZATION.md` 与其指定的唯一 SQL。
+- AI 协作、风险分级、审查或证据治理：`docs/AI_AGENT_GOVERNANCE.md`；AI 资料与 skill 路由见 `docs/AI_CODING_RULES.md`。
+- 导入来源、旧分支、脱敏或公开发布：`docs/BASELINE.md`。
 
-## 文档边界
+`docs/API_CONTRACT.md`、`docs/DOMAIN_MODEL.md`、`docs/ASYNC_TASKS.md` 和编码规范体积较大。先检索标题、资源名、接口前缀、状态或业务对象，只读取本次变更涉及的章节；跨契约变更再检查相邻章节，不要整本预载。
 
-- `docs/PROJECT.md`：参赛产品目标、用户主链、范围和总体完成标准。
-- `docs/DECISIONS.md`：已确认的参赛产品、架构、评价、返工、范围和发布取舍及原因。
-- `docs/PLAN.md`：T0～T7 路线、阶段依赖、粗状态和完成信号。
-- `docs/EXECUTION.md`：当前施工现场、子步骤、证据、阻塞和下一动作的唯一实时来源。
-- `docs/tasks/`：阶段目标、边界、反向场景、验证方法和最终验收记录；未来卡在进入阶段前保持草案。
-- `docs/BASELINE.md`：导入来源、分支迁移状态、安全处理和可追溯限制。
+发现页 RunningHub 单执行任务才读取 `docs/contracts/discovery-runninghub/`，并同步核对 API、领域、异步任务和架构中的对应章节。创作时间轴任务才读取 `docs/contracts/creation-timeline/` 及对应章节。
 
-### 发现页 RunningHub 单执行公共契约（2026-08-11）
+## 历史和阶段资料
 
-发现页单执行变更必须同时阅读并同步 `docs/API_CONTRACT.md`、`docs/DOMAIN_MODEL.md`、`docs/ASYNC_TASKS.md` 与 `docs/contracts/discovery-runninghub/`。其中 JSON 夹具及其 `WorkflowContractFixtureTest` 约束 `workflow-form-1`、禁止用户 wire 字段、任务/阶段矩阵和稳定错误码；运营端唯一执行配置的架构边界见 `docs/ARCHITECTURE.md`。
+- `docs/superpowers/specs/` 与 `docs/superpowers/plans/` 默认视为历史资料，不主动读取。唯一施工例外是 `docs/EXECUTION.md` 当前明确指向的详细计划。
+- 旧阶段任务卡已退出活动施工链；只有追溯旧验收边界时才从 Git 历史读取。
+- `ai-video.md`、`ai-video-pages.md` 和被新文档取代的旧规格/计划只用于追溯，不能覆盖当前源码、公共契约或 `docs/EXECUTION.md`。
 
-- docs/AI_AGENT_GOVERNANCE.md：AI 智能体协作、风险分级、质量门禁、任务卡、并发、审查、Token 预算与例外治理。
-- `docs/ARCHITECTURE.md`：系统分层、职责边界、状态归属和关键数据流。
-- `docs/API_CONTRACT.md`：接口规则，不维护完整业务 API 清单。
-- `docs/ASYNC_TASKS.md`：异步任务、幂等、回调、轮询和额度处理规则。
-- `docs/DOMAIN_MODEL.md`：领域建模规则，不维护完整表结构或状态机全集。
-- `docs/FRONTEND_GUIDE.md`：前端工程、包、页面与模块组织，以及 Electron 集成流程；不承载编码硬规则。
-- `docs/BACKEND_GUIDE.md`：后端工程、包、模块组织与开发流程；不承载编码硬规则。
-- `docs/FRONTEND_CODING_STANDARDS.md`：前端语言、框架、组件、接口、性能和测试的编码硬规则。
-- `docs/BACKEND_CODING_STANDARDS.md`：后端语言、分层、数据访问、安全、异步和测试的编码硬规则。
-- `docs/AI_CODING_RULES.md`：AI 编程、superpowers 模板和外部规则来源。
-- `docs/DEVELOPMENT_DATABASE_INITIALIZATION.md`：开发数据库初始化入口、连接来源、种子数据、幂等与排除范围。
+## 工程边界速查
 
-## 何时更新文档
+```text
+ai-video-desktop/                 Electron 薄壳、本地能力与安全策略
+ai-video-ui/ai-video-webapp/      用户端 React Web
+ai-video-ui/ai-video-platform-ui/ 管理端/运营端 React UI
+ai-video-api/ai-video-user-api/   用户端 API 启动模块
+ai-video-api/ruoyi-admin/         管理端/运营端 API 启动模块
+ai-video-api/ruoyi-modules/       共享业务与外部集成模块
+ai-video-worker/                  媒体与任务工作进程
+```
 
-- 改产品范围或最终验收：更新 `docs/PROJECT.md`；形成会影响后续施工的明确取舍时同步 `docs/DECISIONS.md`。
-- 改阶段路线、依赖或粗状态：更新 `docs/PLAN.md`；当前子步骤、证据、阻塞或下一动作只更新 `docs/EXECUTION.md`。
-- 阶段开始前根据当前源码冻结对应 `docs/tasks/` 卡并生成/更新详细计划；阶段完成后把验收记录写回该卡。源码、配置、环境或标准变化使证据失效时标记 `NEEDS_REVALIDATION`。
-- 改 AI 协作、风险分级、质量门禁、并发、审查或 Token 治理：更新 docs/AI_AGENT_GOVERNANCE.md，并同步检查 AGENTS.md、RULES.md、docs/AI_CODING_RULES.md、docs/DOCUMENT_MAP.md 和 superpowers 模板的薄引用。
-- 改公共接口格式、分页、上传下载或 API 适配规则：更新 `docs/API_CONTRACT.md`。
-- 改领域对象、字段含义、状态、字典或数据归属规则：更新 `docs/DOMAIN_MODEL.md`。
-- 改异步任务、幂等、回调、进度、失败或额度规则：更新 `docs/ASYNC_TASKS.md`。
-- 改前端工程、包、页面或模块组织，以及 Electron 集成流程：更新 `docs/FRONTEND_GUIDE.md`。
-- 改后端工程、包、模块组织或开发流程：更新 `docs/BACKEND_GUIDE.md`。
-- 改前端语言、框架、组件使用、接口消费、性能、测试等硬编码规范：更新 `docs/FRONTEND_CODING_STANDARDS.md`。
-- 改后端语言、分层、数据访问、安全、事务、异步、测试等硬编码规范：更新 `docs/BACKEND_CODING_STANDARDS.md`。
-- 改后端业务对象设计或目录分层：同步更新 `RULES.md`、`docs/BACKEND_GUIDE.md`、`docs/BACKEND_CODING_STANDARDS.md`、`docs/DOMAIN_MODEL.md`、`docs/ARCHITECTURE.md`、`docs/AI_CODING_RULES.md` 及 superpowers 模板；未完成同步前不得实施代码。
-- API、领域和异步任务契约分别仍更新 `docs/API_CONTRACT.md`、`docs/DOMAIN_MODEL.md`、`docs/ASYNC_TASKS.md`，不得以 Guide 或编码规范替代。
-- 改 AI 协作、brainstorming / writing-plans 模板规则：先检查 docs/AI_AGENT_GOVERNANCE.md；涉及风险、质量门禁、并发、审查或 Token 语义时先更新治理主文档，再更新 docs/AI_CODING_RULES.md 或 docs/superpowers/templates/ 的薄接入。
+Electron 目录已经存在；它只能承载窗口、preload、本地能力、更新、安全策略和 Web 加载。前端不得决定任务终态、额度、文件授权或账号归属，用户端与运营端入口不得混包。
+
+## 何时更新
+
+- 范围或最终验收变化：更新 `docs/PROJECT.md`，必要时记录 `docs/DECISIONS.md`。
+- 路线、范围或依赖变化：更新 `docs/PLAN.md`；实时状态、证据、阻塞和下一动作只更新 `docs/EXECUTION.md`。
+- API、领域或异步契约变化：更新对应专项文档，不以 Guide 或编码规范替代。
+- 工程组织变化：更新前后端 Guide；编码硬规则变化：更新对应 Coding Standards。
+- AI 风险、审查或证据规则变化：更新 `docs/AI_AGENT_GOVERNANCE.md`，并检查入口与本路由是否仍为薄引用。

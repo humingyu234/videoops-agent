@@ -31,7 +31,7 @@
 - 权威规格：`docs/superpowers/specs/2026-08-08-creation-step-6-full-stack-timeline-design.md`。
 - 公共规则：`AGENTS.md`、`RULES.md`、`docs/API_CONTRACT.md`、`docs/DOMAIN_MODEL.md`、`docs/ASYNC_TASKS.md`、`docs/ARCHITECTURE.md`。
 - 前端规则：`docs/FRONTEND_GUIDE.md`、`docs/FRONTEND_CODING_STANDARDS.md`、`.agents/skills/antd/SKILL.md`。
-- 后端规则：`ai-video-api/.codex/skills/ruoyi-plus-ai-coding/SKILL.md`、`docs/BACKEND_GUIDE.md`、`docs/BACKEND_CODING_STANDARDS.md`。
+- 后端规则：`.agents/skills/ruoyi-plus-ai-coding/SKILL.md`、`docs/BACKEND_GUIDE.md`、`docs/BACKEND_CODING_STANDARDS.md`。
 - AI 协作规则：`docs/AI_AGENT_GOVERNANCE.md`、`docs/AI_CODING_RULES.md`。
 
 历史时间轴计划只保留为历史记录，不读取、不复制、不修补，也不作为前置条件。本计划不授权顺带重构第 1 至第 4 步、发现页、运营端、旧数字人任务表、旧素材表或旧账号归属代码。

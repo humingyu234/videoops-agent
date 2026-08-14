@@ -26,7 +26,7 @@
 - 不允许实施智能体借“审查”名义增加并发写入。
 - 不修改业务代码、业务契约或当前 P0-A 验收范围。
 - 不把治理正文复制到入口文档或技能文件中。
-- 不修改 `.codex/skills/**` 下的 Superpowers 中文版或其他上游 skill；项目差异只能通过项目治理文档约束。
+- 不修改 `.trae/skills/**` 下的 Superpowers 中文版或其他上游 skill；项目差异只能通过项目治理文档约束。
 
 ## 3. 风险等级
 
@@ -120,4 +120,4 @@
 - `docs/superpowers/templates/brainstorming-module-contract.md`
 - `docs/superpowers/templates/writing-plans-module-contract.md`
 
-`.codex/skills/**` 明确不在修改范围内。`chinese-code-review` 已使用三个目标标签，项目只在治理主文档中规定 `[问题]` 的过程性边界；`receiving-code-review` 使用普通语义描述审查顺序，不需要复制分类规则。
+`.trae/skills/**` 明确不在修改范围内。`chinese-code-review` 已使用三个目标标签，项目只在治理主文档中规定 `[问题]` 的过程性边界；`receiving-code-review` 使用普通语义描述审查顺序，不需要复制分类规则。

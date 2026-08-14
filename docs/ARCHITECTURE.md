@@ -29,6 +29,8 @@
 
 `DeliveryBrief` 是版本化交付输入，保存原始目标、确认事实、带归属的素材 ID、输出限制、可见默认值、阻塞问题和服务端规范化摘要。确认后发生变化必须创建新版本；旧版本的迟到结果只能成为历史候选，不能写回当前版本。
 
+首期字段组固定为：原始目标与 `image_to_digital_human_video` 交付类型；主体、受众、核心信息、行动号召、必留事实和禁用内容；带归属的形象/音色/音频资产 ID 与已确认脚本版本；语言、时长、比例、字幕、画中画和 MP4 输出要求；截止时间、额度、0～2 次返工上限；可见假设、阻塞问题和服务端规范化 `briefHash`。字段级数据库与 API 设计仍须在 T2 进入施工时写入公共契约，本文不预设表结构。
+
 `AcceptanceProfile` 是该 Brief 版本的验收快照，保存硬标准、主观标准、评价器/策略版本、证据要求和时间/额度/返工上限。单个模型分数不能独立决定通过、拒绝或返工。
 
 Agent 控制面最小事实包括：
@@ -59,9 +61,24 @@ PLANNING
 
 LLM 只生成符合 schema 的候选 Brief 或白名单动作；状态机和现有 Service 决定权限、归属、幂等、额度、任务终态和允许转换。长任务提交后先持久化外部任务 ID，再暂停 AgentRun；服务恢复时观察同一任务。外部提交状态未知时先对账或转人工，禁止再次 POST。
 
+首期白名单工具覆盖：Brief 规范化/校验、形象与声音选择或校验、参考音频任务、脚本生成或确认、数字人底片、时间轴/字幕/画中画、最终渲染、任务与授权产物查询、质量检查，以及受限重试、局部返工和批准请求。每次调用必须有结构化输入/输出、归属、幂等键、超时、费用/额度预估、错误分类、外部任务 ID 和产物 ID；未注册工具、多余参数、任意 URL、SQL、文件路径或命令必须在产生副作用前被拒绝。
+
 ## 质量、返工与批准
 
 评价分三层独立记录：确定性媒体检查、内容/版式规则、感知/主观评价。每项结果必须关联 criterion code、产物版本、评价器版本、具体证据和置信度；不能只保存总分。
+
+首期稳定 criterion code 为：
+
+```text
+media.playable                 media.container_codec
+media.video_dimensions         media.audio_present
+media.duration                 content.script_integrity
+content.must_include           content.prohibited
+subtitle.text_integrity        subtitle.safe_area
+subtitle.timing                perceptual.identity_similarity
+perceptual.lip_sync            perceptual.voice_consistency
+perceptual.visual_stability    style.tone_match
+```
 
 依赖失效的最小规则：
 

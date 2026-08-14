@@ -8,7 +8,7 @@ description: 前端标准 React CRUD 页面专家。用于当前 plus-ui-react �
 ## 核心原则
 
 1. 先看当前模块最近似页面。
-2. 再参考 `.codex/skills/frontend-crud-coding/references/frontend.md`。
+2. 再参考仓库根目录下的 `.agents/skills/frontend-crud-coding/references/frontend.md`。
 3. 维护或新增生成能力时，优先参考当前仓库 `gen/api.ts.ftl`、`gen/types.ts.ftl`、`gen/index.tsx.ftl`、`gen/index-tree.tsx.ftl`。
 4. 必要时参考关联后端工程 generator 模板确认接口、字段、权限和导出能力。
 5. 默认同时维护：

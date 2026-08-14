@@ -2,7 +2,7 @@
 
 > **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（`- [ ]`）语法来跟踪进度。
 
-**目标：** 在不修改 `.codex/skills/**` 的前提下，由项目治理主文档统一 Code Review 标签，并为红色任务建立受控的标准纯审查并发模式。
+**目标：** 在不修改 `.trae/skills/**` 的前提下，由项目治理主文档统一 Code Review 标签，并为红色任务建立受控的标准纯审查并发模式。
 
 **架构：** `docs/AI_AGENT_GOVERNANCE.md` 继续作为唯一权威来源，负责收窄上游 Review skill 在本项目中的最终输出和并发边界。实施或混合阶段保持原风险并发上限；只有不实施项目变更的独立纯审查阶段可按条件使用 1 个主审加最多 2 个专项审查者。
 
@@ -20,8 +20,8 @@
 
 **只读检查，不修改：**
 
-- `.codex/skills/chinese-code-review/SKILL.md`：确认上游 skill 保持原样。
-- `.codex/skills/receiving-code-review/SKILL.md`：确认上游 skill 保持原样。
+- `.trae/skills/chinese-code-review/SKILL.md`：确认上游 skill 保持原样。
+- `.trae/skills/receiving-code-review/SKILL.md`：确认上游 skill 保持原样。
 - `AGENTS.md`：确认仍薄引用治理主文档。
 - `RULES.md`：确认仍薄引用治理主文档。
 - `docs/AI_CODING_RULES.md`：确认仍薄引用治理主文档。
@@ -32,7 +32,7 @@
 ## 工作任务卡
 
 - **单一目标：** 修改项目治理主文档，不修改任何上游 skill。
-- **不做范围：** 不修改业务代码、P0-A 计划、接口/领域契约、测试环境或 `.codex/skills/**`。
+- **不做范围：** 不修改业务代码、P0-A 计划、接口/领域契约、测试环境或 `.trae/skills/**`。
 - **风险：** 红色高风险；变更影响所有后续审查及身份、权限、兼容性等红色任务的审查组织。
 - **权威来源：** 上述规格、`RULES.md`、`docs/AI_AGENT_GOVERNANCE.md`、`docs/AI_CODING_RULES.md`。
 - **验收：** 最终标签统一；风险不降级；纯审查模式边界明确；上游 skill 零差异；规范校验通过。
@@ -59,13 +59,13 @@ if (-not $legacyLabel) { throw '现行三类审查标签基线不存在' }
 $pureReviewMode = Select-String -LiteralPath $governance -Pattern '标准纯审查模式'
 if ($pureReviewMode) { throw '标准纯审查模式已经存在，必须先重新核对计划' }
 
-git diff --quiet -- .codex/skills
+git diff --quiet -- .trae/skills
 if ($LASTEXITCODE -ne 0) { throw '上游 skill 已存在工作区改动，停止实施' }
-git diff --cached --quiet -- .codex/skills
+git diff --cached --quiet -- .trae/skills
 if ($LASTEXITCODE -ne 0) { throw '上游 skill 已存在暂存区改动，停止实施' }
 ```
 
-预期：旧标签基线存在；标准纯审查模式尚不存在；`.codex/skills/**` 没有工作区差异。
+预期：旧标签基线存在；标准纯审查模式尚不存在；`.trae/skills/**` 没有工作区差异。
 
 - [ ] **步骤 2：统一最终审查标签**
 
@@ -142,9 +142,9 @@ foreach ($pattern in $requiredPatterns) {
 if (Select-String -LiteralPath $governance -Pattern '审查结论只能标记为“阻塞”“建议”或“信息”') {
   throw '旧最终审查标签仍然存在'
 }
-git diff --quiet -- .codex/skills
+git diff --quiet -- .trae/skills
 if ($LASTEXITCODE -ne 0) { throw '实施意外修改了上游 skill' }
-git diff --cached --quiet -- .codex/skills
+git diff --cached --quiet -- .trae/skills
 if ($LASTEXITCODE -ne 0) { throw '实施意外暂存了上游 skill' }
 ```
 
@@ -187,7 +187,7 @@ foreach ($path in $thinReferences) {
 ```text
 [必须修复] 是否仍能借纯审查名义实施写入或绕过独立性
 [必须修复] 是否弱化红色任务风险、专项验证或 Token 停损规则
-[必须修复] 是否修改了 .codex/skills/**
+[必须修复] 是否修改了 .trae/skills/**
 [建议修改] 是否存在重复规则或术语歧义
 [仅供参考] 已保持不变的既有门禁
 ```
@@ -209,14 +209,14 @@ if ($LASTEXITCODE -ne 0) { throw '暂存差异格式校验失败' }
 git commit -m 'docs: 统一代码审查标签与并发规则'
 ```
 
-预期：提交只包含 `docs/AI_AGENT_GOVERNANCE.md`，当前 P0-A 工作区改动和 `.codex/skills/**` 均不进入提交。
+预期：提交只包含 `docs/AI_AGENT_GOVERNANCE.md`，当前 P0-A 工作区改动和 `.trae/skills/**` 均不进入提交。
 
 ## 最终交付记录
 
 交付时必须列出：
 
 - 修改的项目治理条款。
-- `.codex/skills/**` 零差异证据。
+- `.trae/skills/**` 零差异证据。
 - 开发规范校验、规则断言和 `git diff --check` 结果。
 - 独立审查结果及未验证项。
 - 活动智能体数、引用范围、工具调用、审查轮次和测试结果，并标记为“非精确 Token 账单”。

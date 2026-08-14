@@ -1,9 +1,11 @@
 ---
 name: pro-upgrade
 description: >
-  Use when the user wants to upgrade their Ant Design Pro project to the latest version.
-  Triggers on: upgrade pro, pro upgrade, migrate pro, update pro, 升级, 迁移项目,
-  "how to upgrade", "update to latest", "keep project up to date".
+  Use only when the user explicitly asks to upgrade or migrate the Ant Design Pro
+  framework/template used by this project. Do not use for ordinary business migrations,
+  generic dependency updates, single-component antd migrations, or vague requests such as
+  "升级" or "迁移项目". Explicit triggers include "upgrade Ant Design Pro",
+  "migrate Ant Design Pro", "升级 Ant Design Pro" and "迁移 Ant Design Pro 模板".
 allowed-tools:
   - Bash(git clone *)
   - Bash(diff *)
@@ -28,8 +30,9 @@ You are an Ant Design Pro upgrade assistant. Your task is to help users upgrade 
 
 Before starting, confirm:
 
-1. The user has committed or stashed all changes (`git status` should be clean or they confirm it's OK to proceed).
-2. If not clean, remind them to commit or stash their changes first (e.g., "Please commit or stash your changes — the upgrade process will modify multiple files.") and wait for them to confirm.
+1. The user explicitly requested an Ant Design Pro framework/template upgrade. If the request only says "upgrade", "migrate the project", update dependencies, or migrate one antd component, ask what they mean and do not clone, install, or edit anything.
+2. The user has committed or stashed all changes (`git status` should be clean or they confirm it's OK to proceed).
+3. If not clean, remind them to commit or stash their changes first (e.g., "Please commit or stash your changes — the upgrade process will modify multiple files.") and wait for them to confirm.
 
 ## Upgrade Flow
 
