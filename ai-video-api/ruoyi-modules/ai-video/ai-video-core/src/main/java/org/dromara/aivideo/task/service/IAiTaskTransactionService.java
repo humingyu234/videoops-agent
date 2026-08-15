@@ -17,11 +17,15 @@ import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
 
 import java.time.Instant;
+import java.util.Optional;
 
 /** Short, owner-audited database transactions for the durable task state machine. */
 public interface IAiTaskTransactionService {
 
     AiTaskDTO createFreeTask(long actorId, CreateFreeAiTaskDTO command);
+
+    Optional<AiTaskDTO> replayTimelineRender(long actorId, String projectId, String draftRevision,
+                                             String idempotencyKey, String requestDigest);
 
     AiTaskDTO createWorkflowTask(AiTaskActorDTO actor, CreateWorkflowAiTaskDTO command);
 

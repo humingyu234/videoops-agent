@@ -14,9 +14,12 @@ import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
 
 import java.time.Instant;
+import java.util.Optional;
 
 public interface IAiTaskService {
     AiTaskDTO createFreeTask(long actorId, CreateFreeAiTaskDTO command);
+    Optional<AiTaskDTO> replayTimelineRender(long actorId, String projectId, String draftRevision,
+                                             String idempotencyKey, String requestDigest);
     AiTaskDTO createWorkflowTask(AiTaskActorDTO actor, CreateWorkflowAiTaskDTO command);
     AiTaskDTO getOwned(long actorId, String taskId);
     AiTaskDTO getOwned(AiTaskAccessScopeDTO scope, String taskId);

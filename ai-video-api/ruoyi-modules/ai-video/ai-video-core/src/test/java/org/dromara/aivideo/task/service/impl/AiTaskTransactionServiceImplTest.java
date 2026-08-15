@@ -52,6 +52,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -228,6 +229,44 @@ class AiTaskTransactionServiceImplTest {
         verify(taskMapper, never()).insert(any(AiTask.class));
         verify(executionMapper, never()).insert(any(AiTaskExecution.class));
         verify(versionMapper, never()).insert(any(TimelineVersion.class));
+    }
+
+    @Test
+    void timelineRenderPreflightReplaysOnlyTheExactOwnerProjectRevisionAndDigestWithoutWrites() throws Exception {
+        AiTask winner = existingRenderTask("render-replay", "b".repeat(64));
+        TimelineVersion version = new TimelineVersion();
+        version.setTimelineVersionId(601L);
+        version.setOwnerUserId(7L);
+        version.setProjectId(900L);
+        version.setSourceDraftRevision(3L);
+        when(taskMapper.selectOne(any(Wrapper.class))).thenReturn(winner);
+        when(versionMapper.selectOne(any(Wrapper.class))).thenReturn(version);
+
+        Optional<AiTaskDTO> replay = service().replayTimelineRender(7L, "900", "3", "render-replay",
+            "b".repeat(64));
+
+        assertThat(replay).hasValueSatisfying(task -> {
+            assertThat(task.taskId()).isEqualTo("701");
+            assertThat(task.projectId()).isEqualTo("900");
+            assertThat(task.draftRevision()).isEqualTo("3");
+        });
+        assertThatThrownBy(() -> service().replayTimelineRender(7L, "901", "3", "render-replay",
+            "b".repeat(64)))
+            .isInstanceOfSatisfying(ServiceException.class,
+                exception -> assertThat(exception.getCode()).isEqualTo(46609));
+        assertThatThrownBy(() -> service().replayTimelineRender(7L, "900", "4", "render-replay",
+            "b".repeat(64)))
+            .isInstanceOfSatisfying(ServiceException.class,
+                exception -> assertThat(exception.getCode()).isEqualTo(46609));
+        assertThatThrownBy(() -> service().replayTimelineRender(7L, "900", "3", "render-replay",
+            "d".repeat(64)))
+            .isInstanceOfSatisfying(ServiceException.class,
+                exception -> assertThat(exception.getCode()).isEqualTo(46609));
+        verify(taskMapper, never()).insert(any(AiTask.class));
+        verify(executionMapper, never()).insert(any(AiTaskExecution.class));
+        verify(versionMapper, never()).insert(any(TimelineVersion.class));
+        verify(projectMapper, never()).selectOne(any(Wrapper.class));
+        verify(draftMapper, never()).selectOne(any(Wrapper.class));
     }
 
     @Test
@@ -533,6 +572,16 @@ class AiTaskTransactionServiceImplTest {
         task.setIdempotencyKey(idempotencyKey);
         task.setRequestDigest(requestDigest);
         task.setRequestPayloadJson(jsonMapper.writeValueAsString(imagePromptCommand(idempotencyKey, requestDigest).payload()));
+        return task;
+    }
+
+    private AiTask existingRenderTask(String idempotencyKey, String requestDigest) throws Exception {
+        AiTask task = runningTask(AiTaskStatus.SUCCESS.value(), 2L);
+        task.setTaskType(AiTaskType.TIMELINE_RENDER.value());
+        task.setIdempotencyKey(idempotencyKey);
+        task.setRequestDigest(requestDigest);
+        task.setInputVersionId(601L);
+        task.setRequestPayloadJson(jsonMapper.writeValueAsString(renderCommand(idempotencyKey, requestDigest).payload()));
         return task;
     }
 

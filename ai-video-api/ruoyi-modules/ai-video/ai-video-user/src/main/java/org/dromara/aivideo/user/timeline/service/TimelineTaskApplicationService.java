@@ -121,8 +121,7 @@ public class TimelineTaskApplicationService {
     }
 
     public AiTaskDTO createRender(long actorId, String projectId, CreateTimelineRenderTaskBo body) {
-        TaskContext context = taskContext(actorId, projectId, body.getExpectedRevision());
-        CreateTimelineRenderTaskBo.OutputConfig input = body.getOutputConfig();
+        CreateTimelineRenderTaskBo.OutputConfig input = body == null ? null : body.getOutputConfig();
         if (input == null || !"match_canvas".equals(input.getResolutionPreset())
             || input.getFrameRate() == null || input.getFrameRate() != 30
             || !TimelineContractLimits.OUTPUT_QUALITIES.contains(input.getQualityPreset())) {
@@ -134,14 +133,21 @@ public class TimelineTaskApplicationService {
         } catch (IllegalArgumentException exception) {
             throw invalid("Invalid timeline output configuration");
         }
+        String requestDigest = digest(AiTaskType.TIMELINE_RENDER.value(), projectId, body.getExpectedRevision(),
+            input.getResolutionPreset(), Integer.toString(input.getFrameRate()), input.getQualityPreset());
+        var replay = taskService.replayTimelineRender(actorId, projectId, body.getExpectedRevision(),
+            body.getIdempotencyKey(), requestDigest);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+        TaskContext context = taskContext(actorId, projectId, body.getExpectedRevision());
         TimelineOutputConfigDTO output = new TimelineOutputConfigDTO(input.getResolutionPreset(), input.getFrameRate(),
             quality);
         TimelineRenderCommandDTO command = new TimelineRenderCommandDTO(null, null, null, null,
             TimelineContractLimits.FONT_REGISTRY_VERSION, TimelineContractLimits.FONT_REGISTRY_SHA256, null, output,
             renderAssets(actorId, context.draft().timeline()));
         return create(actorId, projectId, body.getExpectedRevision(), body.getIdempotencyKey(),
-            digest(AiTaskType.TIMELINE_RENDER.value(), projectId, body.getExpectedRevision(),
-                input.getResolutionPreset(), Integer.toString(input.getFrameRate()), input.getQualityPreset()),
+            requestDigest,
             AiTaskType.TIMELINE_RENDER, new AiTaskRenderPayloadDTO(command));
     }
 

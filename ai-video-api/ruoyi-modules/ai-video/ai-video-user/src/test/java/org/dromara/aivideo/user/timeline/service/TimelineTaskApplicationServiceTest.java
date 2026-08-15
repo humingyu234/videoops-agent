@@ -28,11 +28,14 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -90,6 +93,8 @@ class TimelineTaskApplicationServiceTest {
         when(projectService.getOwned(7L, "88")).thenReturn(project());
         when(draftService.getOwned(7L, "88")).thenReturn(draft());
         when(assetService.resolveDigitalHumanSource(7L, "99")).thenReturn(source());
+        when(taskService.replayTimelineRender(7L, "88", "3", "render-task-1", digest(
+            "timeline_render", "88", "3", "match_canvas", "30", "high"))).thenReturn(Optional.empty());
         when(taskService.createFreeTask(eq(7L), any(CreateFreeAiTaskDTO.class))).thenReturn(task());
 
         service().createRender(7L, "88", body);
@@ -102,6 +107,28 @@ class TimelineTaskApplicationServiceTest {
         assertThat(payload.command().outputConfig().qualityPreset()).isEqualTo(TimelineOutputQuality.HIGH);
         assertThat(payload.command().fontRegistryVersion()).isEqualTo(TimelineContractLimits.FONT_REGISTRY_VERSION);
         assertThat(payload.command().fontRegistrySha256()).isEqualTo(TimelineContractLimits.FONT_REGISTRY_SHA256);
+    }
+
+    @Test
+    void exactRenderReplayReturnsBeforeProjectDraftAndAssetResolution() {
+        CreateTimelineRenderTaskBo body = new CreateTimelineRenderTaskBo();
+        body.setIdempotencyKey("render-task-1");
+        body.setExpectedRevision("3");
+        CreateTimelineRenderTaskBo.OutputConfig outputConfig = new CreateTimelineRenderTaskBo.OutputConfig();
+        outputConfig.setResolutionPreset("match_canvas");
+        outputConfig.setFrameRate(30);
+        outputConfig.setQualityPreset("high");
+        body.setOutputConfig(outputConfig);
+        String requestDigest = digest("timeline_render", "88", "3", "match_canvas", "30", "high");
+        when(taskService.replayTimelineRender(7L, "88", "3", "render-task-1", requestDigest))
+            .thenReturn(Optional.of(task()));
+
+        AiTaskDTO result = service().createRender(7L, "88", body);
+
+        assertThat(result.taskId()).isEqualTo("701");
+        verify(taskService).replayTimelineRender(7L, "88", "3", "render-task-1", requestDigest);
+        verify(taskService, never()).createFreeTask(eq(7L), any(CreateFreeAiTaskDTO.class));
+        verifyNoInteractions(projectService, draftService, assetService);
     }
 
     private TimelineTaskApplicationService service() {

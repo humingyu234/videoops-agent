@@ -81,6 +81,7 @@ import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
@@ -170,6 +171,33 @@ public class AiTaskTransactionServiceImpl implements IAiTaskTransactionService {
             }
             throw taskInvalid("任务创建冲突");
         }
+    }
+
+    @Override
+    public Optional<AiTaskDTO> replayTimelineRender(long actorId, String projectId, String draftRevision,
+                                                    String idempotencyKey, String requestDigest) {
+        if (actorId <= 0 || !POSITIVE_ID.matcher(nullToEmpty(projectId)).matches()
+            || !POSITIVE_ID.matcher(nullToEmpty(draftRevision)).matches()
+            || !IDEMPOTENCY_KEY.matcher(nullToEmpty(idempotencyKey)).matches()
+            || !LOWER_HEX.matcher(nullToEmpty(requestDigest)).matches()) {
+            throw taskInvalid("渲染任务幂等回放请求无效");
+        }
+        long requestedProjectId = parsePositiveId(projectId, "创作项目不存在");
+        AiTask existing = findByIdempotency(actorId, idempotencyKey);
+        if (existing == null) {
+            return Optional.empty();
+        }
+        if (!AiTaskType.TIMELINE_RENDER.value().equals(existing.getTaskType())
+            || !AiTaskResourceType.CREATION_PROJECT.value().equals(existing.getResourceType())
+            || !Objects.equals(existing.getResourceId(), requestedProjectId)
+            || !Objects.equals(existing.getRequestDigest(), requestDigest)) {
+            throw idempotencyConflict();
+        }
+        AiTaskDTO replay = toDto(existing, true);
+        if (!Objects.equals(replay.draftRevision(), draftRevision)) {
+            throw idempotencyConflict();
+        }
+        return Optional.of(replay);
     }
 
     @Override

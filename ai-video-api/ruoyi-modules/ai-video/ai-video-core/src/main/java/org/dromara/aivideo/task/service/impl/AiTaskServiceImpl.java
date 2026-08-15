@@ -51,6 +51,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** Public task facade: short transactions live below; C0 AI/media calls live outside of them. */
@@ -103,6 +104,13 @@ public class AiTaskServiceImpl implements IAiTaskService {
     @Override
     public AiTaskDTO createFreeTask(long actorId, CreateFreeAiTaskDTO command) {
         return transactionService.createFreeTask(actorId, command);
+    }
+
+    @Override
+    public Optional<AiTaskDTO> replayTimelineRender(long actorId, String projectId, String draftRevision,
+                                                    String idempotencyKey, String requestDigest) {
+        return transactionService.replayTimelineRender(actorId, projectId, draftRevision, idempotencyKey,
+            requestDigest);
     }
 
     @Override
