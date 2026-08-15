@@ -1,69 +1,85 @@
 package org.dromara.aivideo.infra.oss;
 
-import org.dromara.common.oss.properties.OssProperties;
+import org.dromara.common.oss.client.OssClient;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 
 @Tag("dev")
+@ExtendWith(OutputCaptureExtension.class)
 class AiVideoOssConfigurationInitializerTest {
 
     @Test
-    void publishesPrivateAliyunConfigurationFromLocalDevelopmentYaml() {
-        AiVideoOssProperties properties = privateAliyunProperties();
-        AiVideoOssConfigurationCache cache = mock(AiVideoOssConfigurationCache.class);
-        OssProperties expected = new OssProperties();
-        expected.setEndpoint("oss-cn-shanghai.aliyuncs.com");
-        expected.setDomainUrl("");
-        expected.setPrefix("ai-video");
-        expected.setAccessKey("configured-access-key");
-        expected.setSecretKey("configured-secret-key");
-        expected.setBucketName("qc-test-01");
-        expected.setRegion("cn-shanghai");
-        expected.setIsHttps("Y");
-        expected.setAccessPolicy("0");
+    void initializesProjectClientInProcess() throws Exception {
+        AiVideoOssProperties properties = privateProjectProperties();
 
-        new AiVideoOssConfigurationInitializer(properties, cache).initialize();
-
-        verify(cache).put("aliyun", expected);
+        try (OssClient client = new AiVideoOssConfigurationInitializer(properties).initialize()) {
+            assertThat(client.clientId()).isEqualTo("videoops-agent-dev");
+            assertThat(client.config().prefix()).contains("videoops-agent/dev");
+            assertThat(client.isInitialized()).isTrue();
+        }
     }
 
     @Test
     void rejectsPublicObjectPolicyForPrivateCreatorAssets() {
-        AiVideoOssProperties properties = privateAliyunProperties();
+        AiVideoOssProperties properties = privateProjectProperties();
         properties.setAccessPolicy("2");
-        AiVideoOssConfigurationCache cache = mock(AiVideoOssConfigurationCache.class);
 
-        assertThatThrownBy(() -> new AiVideoOssConfigurationInitializer(properties, cache).initialize())
+        assertThatThrownBy(() -> new AiVideoOssConfigurationInitializer(properties).initialize())
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("private");
-        verifyNoInteractions(cache);
     }
 
     @Test
     void doesNotExposeCredentialsThroughPropertiesToString() {
-        AiVideoOssProperties properties = privateAliyunProperties();
+        AiVideoOssProperties properties = privateProjectProperties();
 
         assertThat(properties.toString())
-            .doesNotContain("configured-access-key")
-            .doesNotContain("configured-secret-key");
+            .doesNotContain("sentinel-access-key")
+            .doesNotContain("sentinel-secret-key");
     }
 
-    private AiVideoOssProperties privateAliyunProperties() {
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"", "ai-video", "videoops-agent/dev/"})
+    void rejectsEmptyOrLegacyNamespacesWithoutPublishingThem(String prefix) {
+        AiVideoOssProperties properties = privateProjectProperties();
+        properties.setPrefix(prefix);
+
+        assertThatThrownBy(() -> new AiVideoOssConfigurationInitializer(properties).initialize())
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void omitsPrivateStorageDetailsFromInitializationLogs(CapturedOutput output) throws Exception {
+        AiVideoOssProperties properties = privateProjectProperties();
+
+        try (OssClient ignored = new AiVideoOssConfigurationInitializer(properties).initialize()) {
+            assertThat(ignored.isInitialized()).isTrue();
+        }
+
+        assertThat(output).doesNotContain("sentinel-endpoint", "sentinel-bucket",
+            "sentinel-access-key", "sentinel-secret-key");
+    }
+
+    private AiVideoOssProperties privateProjectProperties() {
         AiVideoOssProperties properties = new AiVideoOssProperties();
         properties.setEnabled(true);
-        properties.setConfigKey("aliyun");
-        properties.setEndpoint("oss-cn-shanghai.aliyuncs.com");
+        properties.setConfigKey("videoops-agent-dev");
+        properties.setEndpoint("sentinel-endpoint");
         properties.setDomainUrl("");
-        properties.setPrefix("ai-video");
-        properties.setAccessKey("configured-access-key");
-        properties.setSecretKey("configured-secret-key");
-        properties.setBucketName("qc-test-01");
+        properties.setPrefix("videoops-agent/dev");
+        properties.setAccessKey("sentinel-access-key");
+        properties.setSecretKey("sentinel-secret-key");
+        properties.setBucketName("sentinel-bucket");
         properties.setRegion("cn-shanghai");
         properties.setHttps(true);
         properties.setAccessPolicy("0");

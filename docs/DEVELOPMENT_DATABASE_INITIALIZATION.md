@@ -1,63 +1,44 @@
-# 开发数据库初始化
+# 独立开发数据库初始化边界
 
-> RunningHub 发现与单执行基线必须先按日期顺序执行 `20260808_01_creation_timeline.sql`、`20260811_01_discovery_runninghub_single_execution.sql` 和 `20260811_02_discovery_runninghub_admin_menu.sql`。本初始化脚本只守卫迁移已应用并幂等补种开发数据，不复制业务 DDL 或删除业务数据。执行后可查询 `information_schema.tables`，确认 `av_discovery_banner`、`av_discovery_category`、`av_discovery_tag`、`av_workflow_template`、`av_workflow_execution_config`、`av_runninghub_account`、`av_workflow_order`、`av_workflow_task_execution`、`av_workflow_order_asset`、`av_file_object`、`av_upload_session` 共 11 张表存在。
+公司项目只作为一次性脱敏代码基线。禁止在共享 `ai_video` 上迁移或初始化，也禁止把公司业务库整库复制到 VideoOps Agent。
 
-本文档规定本机开发库基线数据的唯一初始化方式。它用于代码更新后恢复可登录、可授权、可扣积分、可读取知识库的开发环境，不替代正式数据库迁移。
+独立开发目标固定为本机 `videoops_agent_dev`。唯一 canonical bootstrap 入口是 `docs/sql/videoops-agent/mysql/bootstrap-manifest.json`：`001`、`010`、`020`、`030`、`040`、`050`、`060`、`070`、`080`、`090` 为 schema 步骤，`900` 为唯一 seed 步骤。目标身份、顺序、用途、允许写入表和 SHA-256 只以 manifest 为准，本文不复制哈希。
 
-## 唯一入口
+## 空库重建顺序
 
-使用 `ai-video-api/ai-video-user-api/src/main/resources/application-dev.yml` 最终生效的主数据源连接 MySQL，然后在数据库客户端直接执行完整文件：
+1. 使用受控管理员身份只读查询 `information_schema.schemata`。目标必须是 `127.0.0.1:3306/videoops_agent_dev`，且 schema 不存在；若已经存在但归属不明，立即停止，不覆盖、不 `DROP`。
+2. 创建 `videoops_agent_dev`，字符集 `utf8mb4`，排序规则 `utf8mb4_0900_ai_ci`。创建仅限该 schema 的运行账号 `videoops_agent`；它只保留 `SELECT`、`INSERT`、`UPDATE`、`DELETE`，不得获得全局、其他 schema、表级、列级、例程或 `GRANT OPTION` 权限。管理员/迁移身份只用于受控 bootstrap，不能成为应用依赖。
+3. 运行 `scripts/validate-videoops-database-bootstrap.ps1`。只有输出 `VIDEOOPS_DATABASE_BOOTSTRAP_OK` 且 `scripts/tests/validate-videoops-database-bootstrap.Tests.ps1` 全部通过，才可读取 manifest 执行。
+4. 按 manifest 逐文件执行 `001` 至 `090`。每步执行前复核 SHA-256，执行后检查退出码和文件自身 postcondition；任一步失败立即停止并只读对账。MySQL DDL 可能隐式提交，禁止 `--force`、整串当事务、盲目重跑或继续后续步骤。
+5. 所有 schema postcondition 通过且 35 张表总行数为 0 后，在同一个 MySQL 会话安全注入 `@videoops_creator_password_hash`，执行 `900_minimal_seed.sql`。不得把明文口令或 BCrypt 摘要放进参数、仓库、日志或聊天。使用相同会话摘要重复执行一次，退出码和 postcondition 必须再次通过，行数不得变化。
+6. 写入前后分别采集共享 `ai_video` 的结构/关键计数摘要与 Redis DB0/DB14 脱敏计数；任何差异都立即失败，不自动恢复旧数据。
 
-```text
-docs/sql/ai-video/mysql/20260810_00_development_database_initialization.sql
-```
+禁止使用 Docker、WSL、整库 dump 或旁路连接替代本机 MySQL 8。密码只能经项目本地 Git 忽略的安全存储、临时子进程环境或专用 login-path 使用；不得复制到配置、SQL、命令参数、日志或持久环境。
 
-执行初始化前应停止用户端和运营端后端，完成后重新登录，避免旧会话缓存继续使用初始化前的权限修订号。
+## Bootstrap 包边界
 
-## 数据库连接硬约束
+`docs/sql/ry_vue.sql`、`docs/sql/ai-video/mysql/` 下的旧迁移和 `20260810_00_development_database_initialization.sql` 只保留为来源审计，不得对 `videoops_agent_dev` 整文件执行：
 
-- SQL 文件本身不建立数据库连接；执行它的数据库客户端必须使用 `ai-video-api/ai-video-user-api/src/main/resources/application-dev.yml` 最终生效的 `spring.datasource.dynamic.datasource.master.url`、`username`、`password`。
-- 禁止读取 `codex-local-stack.yml`、Docker Compose、容器、`.env`、临时覆盖文件或 Agent 自建连接配置。
-- SQL 在数据库客户端当前选中的数据库中执行，不硬编码或校验数据库名称；执行者必须自行确认当前连接和数据库正确。
-- 数据库客户端不得把密码写入共享命令、日志或提交文件。
-- 用户端与运营端的 `application-dev.yml` 应保持同一开发数据源；初始化入口仍只以用户端后端配置为准，避免出现两个来源。
+- `ry_vue.sql` 混合 24 张表结构与 332 条框架、demo、身份和 OSS 配置插入；T1 所需的六张最小框架表已收口到 `001_framework_schema.sql`。
+- 旧迁移混有管理端、RunningHub、旧权限 seed 和非幂等 ALTER；T1 最终结构已按真实黄金链提取到 `010` 至 `090`。
+- `20260810_00` 含广账号、角色、权限和知识内容；纯合成最小数据已收口到 `900_minimal_seed.sql`。
 
-## 初始化内容
+`ry_job.sql`、`ry_ai.sql`、`ry_workflow.sql` 不是当前 T1 用户端黄金链前置。将来若真实入口需要相应模块，再作为独立增量验收，不扩张本次 bootstrap。
 
-单次执行会补齐并校验：
+## 最小 seed 与完成守卫
 
-- 运营端测试管理员及超级管理员角色关系；
-- 用户端测试创作者、个人租户归属和本地认证客户端；
-- 4 个内置创作端角色、31 个权限及 `personal_creator` 的 24 个用户端必需权限映射；
-- 用户与 `personal_creator` 的长期有效角色关系；
-- `ai_text_credit` 个人积分账户；新账户初始可用余额为 `1000000`；
-- 83 条已发布知识条目、83 个已发布版本、83 条已发布绑定和 2 条已发布视频类型规则；
-- 运营端知识库菜单与权限按钮。
+`900` 只允许写 manifest 白名单中的 11 张表：一个纯合成 creator、认证 client、个人角色和 12 项黄金链权限映射，一个纯合成积分账户，以及一份知识 item/version/binding 和一份视频规则。知识版本固定为源码当前要求的 `2084460032627961859`。
 
-固定开发账号：
+它不得包含真实人物、声音、OSS 对象、生成任务、Timeline 运行记录、RunningHub 账号、Provider 凭据或公司业务数据。`sys_oss_config` 与人物、声音、资产、任务、创作和时间轴表在 bootstrap 后必须仍为 0 行。
 
-| 入口 | 用户名 | 密码 | 角色 |
-| --- | --- | --- | --- |
-| 用户端 | `creator` | `admin123` | `personal_creator` |
-| 运营端 | `admin` | `admin123` | `superadmin` |
+当前 MySQL 8.4 完成合同为：
 
-直接执行文件：
+- schema 身份精确为 `videoops_agent_dev / utf8mb4 / utf8mb4_0900_ai_ci`；
+- 35 张 InnoDB base table；无 view、trigger、routine 或 event；
+- 114 个实际索引（其中 7 个由 MySQL 为外键自动建立）和 104 个全部启用的 CHECK；
+- `av_asset.file_id` 为 nullable signed `BIGINT`；
+- 最小 seed 共 33 行，使用相同摘要重复执行后仍为 33；
+- `videoops_agent` 能读取新库，访问 `ai_video` 必须得到权限拒绝；
+- `ai_video` 结构/关键计数与 Redis DB0/DB14 脱敏快照前后相同。
 
-- `docs/sql/ai-video/mysql/20260810_00_development_database_initialization.sql`：已内含账号、客户端、角色权限、积分账户、知识库内容和运营菜单，不需要再分别执行其他种子文件。
-
-## 幂等与数据保护
-
-- 初始化不得执行 `CREATE DATABASE`、`USE`、`DROP TABLE`、`TRUNCATE` 或无条件删除。
-- 重复执行只恢复固定基线及停用关系，不重复追加同一账号、角色、权限或知识记录。
-- 积分账户只在缺失时创建；已有账户的可用、锁定、已用余额和修订号必须全部保留，重复执行不得补发积分。
-- 已有业务任务、生成记录、素材、脚本、时间线、登录日志和安全审计不得清空或伪造。
-- 人物、声音及数字人媒体同时依赖本地或 OSS 文件，不属于纯数据库基线，不能只插入孤立数据库记录。
-- 当前项目没有积分流水表实现，不得为了初始化虚构流水表或流水数据。
-
-## 结构前提与维护规则
-
-- 开发库必须先具备 RuoYi 基础表；缺失时先执行正式基础结构脚本和项目迁移。初始化入口不会覆盖或重建 RuoYi 基础结构。
-- 初始化 SQL 会补齐知识库表；创作端身份表和积分账户表必须先通过正式迁移创建，缺失时 SQL 会立即失败。
-- 新增登录必需账号、认证客户端、内置角色、权限、积分单位、知识路由或知识基线时，必须同步更新一键初始化 SQL、结果校验和本文档。
-- 新增业务表或字段仍通过版本化迁移交付，不得把正式结构演进偷偷塞进开发种子 SQL。
-- 变更本文档或入口规则后必须运行 `scripts/validate-development-standards.ps1`。
+真实资产只在 T1.3 按来源许可另行一次性、最小化导入到 VideoOps 自己的记录和存储 namespace。真实 OSS、Provider 与付费生成不属于数据库 bootstrap。

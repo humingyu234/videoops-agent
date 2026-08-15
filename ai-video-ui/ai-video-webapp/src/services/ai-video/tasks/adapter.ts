@@ -30,6 +30,8 @@ const aiTaskKeys = [
   'taskType',
   'resourceType',
   'resourceId',
+  'projectId',
+  'draftRevision',
   'inputVersionId',
   'status',
   'stage',
@@ -42,6 +44,7 @@ const aiTaskKeys = [
   'errorCode',
   'errorSummary',
   'createdAt',
+  'updatedAt',
   'startedAt',
   'finishedAt',
 ] as const;
@@ -90,11 +93,15 @@ function readTaskCode(record: WireRecord, key: string): string {
 }
 
 function readOptionalString(record: WireRecord, key: string): string | undefined {
-  return Object.hasOwn(record, key) ? readString(record, key) : undefined;
+  return Object.hasOwn(record, key) && record[key] !== null
+    ? readString(record, key)
+    : undefined;
 }
 
 function readOptionalPositiveDecimalId(record: WireRecord, key: string): string | undefined {
-  return Object.hasOwn(record, key) ? readPositiveDecimalId(record, key) : undefined;
+  return Object.hasOwn(record, key) && record[key] !== null
+    ? readPositiveDecimalId(record, key)
+    : undefined;
 }
 
 export function parseAiTaskVOWire(value: unknown): AiTaskVO {
@@ -102,7 +109,7 @@ export function parseAiTaskVOWire(value: unknown): AiTaskVO {
   assertOnlyKnownKeys(record, aiTaskKeys, 'aiTask');
   assertRequiredKeys(record, aiTaskRequiredKeys, 'aiTask');
 
-  if (Object.hasOwn(record, 'result')) {
+  if (Object.hasOwn(record, 'result') && record.result !== null) {
     assertRecord(record.result, 'result');
   }
 
@@ -170,7 +177,7 @@ function taskKind(taskType: string): TaskKind {
 export function parseTaskDetailWire(value: unknown): TaskDetail {
   const task = parseAiTaskVOWire(value);
   const record = assertRecord(value, 'aiTask');
-  const result = Object.hasOwn(record, 'result')
+  const result = Object.hasOwn(record, 'result') && record.result !== null
     ? assertRecord(record.result, 'result')
     : undefined;
   return {

@@ -220,7 +220,7 @@ if (Test-Path -LiteralPath $paths.Execution -PathType Leaf) {
   if (-not $currentStageMatch.Success) { Add-ValidationError "$($paths.Execution) 未声明当前 Tn 阶段" }
   $allowedExecutionStatuses = @(
     'NOT_STARTED', 'IN_PROGRESS', 'VERIFYING', 'BLOCKED',
-    'DONE', 'NEEDS_REVALIDATION', 'DEFERRED'
+    'DONE', 'NEEDS_REVALIDATION', 'DEFERRED', 'PAUSED'
   )
   if (-not $executionStatusMatch.Success -or
       $allowedExecutionStatuses -notcontains $executionStatusMatch.Groups['status'].Value) {

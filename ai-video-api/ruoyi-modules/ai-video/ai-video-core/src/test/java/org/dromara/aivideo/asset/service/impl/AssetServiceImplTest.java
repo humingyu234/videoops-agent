@@ -19,7 +19,6 @@ import org.dromara.aivideo.identity.dto.AppPrincipalSnapshotDTO;
 import org.dromara.aivideo.identity.dto.AppWorkspaceSessionSnapshotDTO;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.oss.client.OssClient;
-import org.dromara.common.oss.factory.OssFactory;
 import org.dromara.common.oss.model.Options;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,12 +29,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.mockito.Mock;
 import org.mockito.ArgumentCaptor;
-import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.time.Duration;
 import java.util.Set;
@@ -46,7 +46,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -58,6 +57,7 @@ class AssetServiceImplTest {
     @Mock private AssetFileMapper assetMapper;
     @Mock private PortraitImageValidator imageValidator;
     @Mock private OssClient ossClient;
+    @Mock private ObjectProvider<OssClient> ossClientProvider;
     private AssetServiceImpl service;
     private AppPrincipalSnapshotDTO principal;
 
@@ -70,7 +70,7 @@ class AssetServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new AssetServiceImpl(assetMapper, imageValidator, new VoiceSampleValidator());
+        service = new AssetServiceImpl(assetMapper, imageValidator, new VoiceSampleValidator(), ossClientProvider);
         AppWorkspaceSessionSnapshotDTO workspace = new AppWorkspaceSessionSnapshotDTO(
             "personal:7", "personal", 1L, "app_user", 7L, "app_user", 7L,
             "owner", Set.of("aivideo:voice:upload"), 1L, null);
@@ -80,26 +80,28 @@ class AssetServiceImplTest {
     @ParameterizedTest
     @NullAndEmptySource
     void uploadVoiceSampleStoresCanonicalMimeWhenClientMimeMissing(String contentType) {
+        useOssClient();
         byte[] mp3 = mp3Frames();
-        when(ossClient.buildPathKey(anyString(), anyString())).thenReturn("voices/7/sample.mp3");
+        when(ossClient.buildPathKey(anyString(), anyString()))
+            .thenReturn("videoops-agent/dev/voices/7/sample.mp3");
         when(assetMapper.insert(any(AssetFile.class))).thenAnswer(invocation -> {
             AssetFile asset = invocation.getArgument(0);
             asset.setAssetId(9L);
             return 1;
         });
 
-        try (MockedStatic<OssFactory> ossFactory = mockStatic(OssFactory.class)) {
-            ossFactory.when(OssFactory::instance).thenReturn(ossClient);
+        AssetDTO result = service.uploadVoiceSample(new UploadVoiceSampleDTO(
+            "sample.mp3", contentType, mp3.length, new ByteArrayInputStream(mp3)), principal);
 
-            AssetDTO result = service.uploadVoiceSample(new UploadVoiceSampleDTO(
-                "sample.mp3", contentType, mp3.length, new ByteArrayInputStream(mp3)), principal);
-
-            assertThat(result.contentType()).isEqualTo("audio/mpeg");
-        }
+        assertThat(result.contentType()).isEqualTo("audio/mpeg");
+        verify(ossClientProvider).getIfAvailable();
+        verify(ossClient).upload(eq("videoops-agent/dev/voices/7/sample.mp3"),
+            any(BufferedInputStream.class), eq((long) mp3.length));
     }
 
     @Test
     void uploadPortraitImageUsesVerifiedContentTypeAsObjectMetadata() {
+        useOssClient();
         byte[] content = {1, 2, 3};
         AppPrincipalSnapshotDTO portraitPrincipal = new AppPrincipalSnapshotDTO(
             7L, "tester", "web", 1L, 1L, 1L, 1L, new AppWorkspaceSessionSnapshotDTO(
@@ -107,33 +109,67 @@ class AssetServiceImplTest {
                 "owner", Set.of("aivideo:portrait:add"), 1L, null));
         when(imageValidator.validate(any(), any(), any()))
             .thenReturn(new PortraitImageMetadata("webp", 2, 3, content.length));
-        when(ossClient.buildPathKey(anyString(), anyString())).thenReturn("portraits/7/new.webp");
+        when(ossClient.buildPathKey(anyString(), anyString()))
+            .thenReturn("videoops-agent/dev/portraits/7/new.webp");
         when(assetMapper.insert(any(AssetFile.class))).thenAnswer(invocation -> {
             invocation.getArgument(0, AssetFile.class).setAssetId(10L);
             return 1;
         });
 
-        try (MockedStatic<OssFactory> ossFactory = mockStatic(OssFactory.class)) {
-            ossFactory.when(OssFactory::instance).thenReturn(ossClient);
+        service.uploadPortraitImage(new UploadPortraitImageDTO("portrait.webp", "image/webp", content), portraitPrincipal);
 
-            service.uploadPortraitImage(new UploadPortraitImageDTO("portrait.webp", "image/webp", content), portraitPrincipal);
+        ArgumentCaptor<Options> options = ArgumentCaptor.forClass(Options.class);
+        verify(ossClient).upload(eq("videoops-agent/dev/portraits/7/new.webp"), eq(content), options.capture());
+        assertThat(options.getValue().getContentType()).isEqualTo("image/webp");
+    }
 
-            ArgumentCaptor<Options> options = ArgumentCaptor.forClass(Options.class);
-            verify(ossClient).upload(eq("portraits/7/new.webp"), eq(content), options.capture());
-            assertThat(options.getValue().getContentType()).isEqualTo("image/webp");
-        }
+    @Test
+    void rejectsLegacyPortraitKeysBeforeUploadOrPersistence() {
+        useOssClient();
+        byte[] content = {1, 2, 3};
+        AppPrincipalSnapshotDTO portraitPrincipal = new AppPrincipalSnapshotDTO(
+            7L, "tester", "web", 1L, 1L, 1L, 1L, new AppWorkspaceSessionSnapshotDTO(
+                "personal:7", "personal", 1L, "app_user", 7L, "app_user", 7L,
+                "owner", Set.of("aivideo:portrait:add"), 1L, null));
+        when(imageValidator.validate(any(), any(), any()))
+            .thenReturn(new PortraitImageMetadata("webp", 2, 3, content.length));
+        when(ossClient.buildPathKey(anyString(), anyString())).thenReturn("ai-video/portraits/7/new.webp");
+
+        assertThatThrownBy(() -> service.uploadPortraitImage(
+            new UploadPortraitImageDTO("portrait.webp", "image/webp", content), portraitPrincipal))
+            .isInstanceOf(IllegalArgumentException.class);
+
+        verify(ossClient, never()).upload(anyString(), any(byte[].class), any(Options.class));
+        verify(assetMapper, never()).insert(any(AssetFile.class));
+    }
+
+    @Test
+    void failsClosedBeforeStorageOrPersistenceWhenProjectOssIsUnavailable() {
+        byte[] content = {1, 2, 3};
+        AppPrincipalSnapshotDTO portraitPrincipal = new AppPrincipalSnapshotDTO(
+            7L, "tester", "web", 1L, 1L, 1L, 1L, new AppWorkspaceSessionSnapshotDTO(
+                "personal:7", "personal", 1L, "app_user", 7L, "app_user", 7L,
+                "owner", Set.of("aivideo:portrait:add"), 1L, null));
+        when(imageValidator.validate(any(), any(), any()))
+            .thenReturn(new PortraitImageMetadata("webp", 2, 3, content.length));
+        assertThatThrownBy(() -> service.uploadPortraitImage(
+            new UploadPortraitImageDTO("portrait.webp", "image/webp", content), portraitPrincipal))
+            .isInstanceOf(ServiceException.class)
+            .hasMessage("VideoOps 对象存储未启用")
+            .extracting("code").isEqualTo(46213);
+        verifyNoInteractions(ossClient);
+        verify(assetMapper, never()).insert(any(AssetFile.class));
     }
 
     @Test
     void tombstoneVoiceAssetDeletesDatabaseFirstAndObjectOnlyAfterCommit() {
+        useOssClient();
         AssetFile asset = ownedVoiceAsset(91L, "voices/7/sample.mp3");
         when(assetMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(asset);
         when(assetMapper.delete(any(LambdaQueryWrapper.class))).thenReturn(1);
         when(ossClient.delete("voices/7/sample.mp3")).thenReturn(true);
         beginTransactionSynchronization();
-        try (MockedStatic<OssFactory> factory = mockStatic(OssFactory.class)) {
-            factory.when(OssFactory::instance).thenReturn(ossClient);
-
+        try {
             service.tombstoneOwnedVoiceAssetAndPurgeAfterCommit("42", "91", principal);
 
             var queryCaptor = org.mockito.ArgumentCaptor.<LambdaQueryWrapper<AssetFile>>captor();
@@ -177,6 +213,7 @@ class AssetServiceImplTest {
 
     @Test
     void tombstoneVoiceAssetMasksWrongCategoryAsInvisible() {
+        useOssClient();
         when(assetMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
         beginTransactionSynchronization();
         try {
@@ -193,6 +230,7 @@ class AssetServiceImplTest {
 
     @Test
     void tombstoneVoiceAssetDoesNotRegisterCallbackWhenConditionalDeleteLosesRace() {
+        useOssClient();
         when(assetMapper.selectOne(any(LambdaQueryWrapper.class)))
             .thenReturn(ownedVoiceAsset(91L, "voices/7/sample.mp3"));
         when(assetMapper.delete(any(LambdaQueryWrapper.class))).thenReturn(0);
@@ -210,6 +248,7 @@ class AssetServiceImplTest {
 
     @Test
     void tombstoneVoiceAssetSwallowsObjectPurgeFailureAfterCommit() {
+        useOssClient();
         when(assetMapper.selectOne(any(LambdaQueryWrapper.class)))
             .thenReturn(ownedVoiceAsset(91L, "voices/7/sample.mp3"));
         when(assetMapper.delete(any(LambdaQueryWrapper.class))).thenReturn(1);
@@ -219,8 +258,7 @@ class AssetServiceImplTest {
         appender.start();
         logger.addAppender(appender);
         beginTransactionSynchronization();
-        try (MockedStatic<OssFactory> factory = mockStatic(OssFactory.class)) {
-            factory.when(OssFactory::instance).thenReturn(ossClient);
+        try {
             service.tombstoneOwnedVoiceAssetAndPurgeAfterCommit("42", "91", principal);
 
             assertThatCode(() -> TransactionSynchronizationManager.getSynchronizations()
@@ -238,6 +276,7 @@ class AssetServiceImplTest {
 
     @Test
     void createsShortLivedUrlOnlyForOwnedReadyWorkflowOutput() {
+        useOssClient();
         AssetFile output = new AssetFile();
         output.setAssetId(92L);
         output.setTenantId(1L);
@@ -252,15 +291,11 @@ class AssetServiceImplTest {
         when(ossClient.presignGetUrl(eq(output.getObjectKey()), any(Duration.class)))
             .thenReturn("https://private.example.test/output.png");
 
-        try (MockedStatic<OssFactory> factory = mockStatic(OssFactory.class)) {
-            factory.when(OssFactory::instance).thenReturn(ossClient);
+        var access = service.createWorkflowAccessUrl("92", principal);
 
-            var access = service.createWorkflowAccessUrl("92", principal);
-
-            assertThat(access.url()).isEqualTo("https://private.example.test/output.png");
-            assertThat(access.contentType()).isEqualTo("image/png");
-            verify(ossClient).presignGetUrl(eq(output.getObjectKey()), any(Duration.class));
-        }
+        assertThat(access.url()).isEqualTo("https://private.example.test/output.png");
+        assertThat(access.contentType()).isEqualTo("image/png");
+        verify(ossClient).presignGetUrl(eq(output.getObjectKey()), any(Duration.class));
     }
 
     private void assertOwnedVoiceAssetScope(LambdaQueryWrapper<AssetFile> wrapper, long assetId) {
@@ -268,6 +303,10 @@ class AssetServiceImplTest {
         assertThat(sql).contains("asset_id", "tenant_id", "workspace_id", "owner_id", "category", "del_flag");
         assertThat(wrapper.getParamNameValuePairs().values())
             .contains(assetId, 1L, "personal:7", 7L, "voice_sample", "0");
+    }
+
+    private void useOssClient() {
+        when(ossClientProvider.getIfAvailable()).thenReturn(ossClient);
     }
 
     private AssetFile ownedVoiceAsset(long assetId, String objectKey) {

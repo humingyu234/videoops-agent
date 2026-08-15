@@ -46,6 +46,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
@@ -65,6 +66,10 @@ public class CreationProjectServiceImpl implements ICreationProjectService {
     private static final String DEFAULT_SUBTITLE_FONT_VERSION = "2.004";
     private static final String DEFAULT_SUBTITLE_FONT_SHA256 =
         "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b";
+    private static final int DEFAULT_SUBTITLE_PREFERRED_CODE_POINTS = 18;
+    private static final int DEFAULT_SUBTITLE_MIN_CODE_POINTS = 6;
+    private static final String DEFAULT_SUBTITLE_OUTLINE_COLOR = "#000000FF";
+    private static final int DEFAULT_SUBTITLE_OUTLINE_WIDTH_PX = 3;
 
     private final CreationProjectMapper projectMapper;
     private final TimelineDraftMapper draftMapper;
@@ -377,24 +382,28 @@ public class CreationProjectServiceImpl implements ICreationProjectService {
         String script = source.scriptTextSnapshot();
         int scriptCodePoints = script.codePointCount(0, script.length());
         int maxCodePoints = TimelineContractLimits.NUMERIC_LIMITS.get("maxSubtitleCodePoints").intValue();
-        int segmentCount = (scriptCodePoints + maxCodePoints - 1) / maxCodePoints;
+        List<SubtitleSourceRange> sourceRanges = initialSubtitleSourceRanges(script, maxCodePoints);
+        int segmentCount = sourceRanges.size();
         int maxElements = TimelineContractLimits.NUMERIC_LIMITS.get("maxElementsPerTrack").intValue();
         if (segmentCount <= 0 || segmentCount > maxElements || source.durationMs() < segmentCount) {
             throw sourceInvalid("创作来源文案无法生成初始字幕");
         }
-        List<TimelineSubtitleElementDTO> candidates = new java.util.ArrayList<>(segmentCount);
+        List<TimelineSubtitleElementDTO> candidates = new ArrayList<>(segmentCount);
         for (int index = 0; index < segmentCount; index++) {
-            int sourceStart = index * maxCodePoints;
-            int sourceEnd = Math.min(scriptCodePoints, sourceStart + maxCodePoints);
+            SubtitleSourceRange range = sourceRanges.get(index);
+            int sourceStart = range.startOffset();
+            int sourceEnd = range.endOffset();
             String sourceText = script.substring(script.offsetByCodePoints(0, sourceStart),
                 script.offsetByCodePoints(0, sourceEnd));
-            long startMs = source.durationMs() * index / segmentCount;
-            long endMs = source.durationMs() * (index + 1L) / segmentCount;
+            long startMs = source.durationMs() * sourceStart / scriptCodePoints;
+            long endMs = index == segmentCount - 1 ? source.durationMs()
+                : source.durationMs() * sourceEnd / scriptCodePoints;
             candidates.add(new TimelineSubtitleElementDTO("subtitle-%03d".formatted(index + 1),
                 TimelineElementType.SUBTITLE, startMs, endMs, 1, true, false, "subtitle",
                 sourceText, sourceText, sourceStart, sourceEnd, DEFAULT_SUBTITLE_FONT,
                 DEFAULT_SUBTITLE_FONT_VERSION, DEFAULT_SUBTITLE_FONT_SHA256, 48, "#FFFFFFFF",
-                false, null, false, null, 0, "lower", "center"));
+                false, null, true, DEFAULT_SUBTITLE_OUTLINE_COLOR, DEFAULT_SUBTITLE_OUTLINE_WIDTH_PX,
+                "lower", "center"));
         }
         List<TimelineSubtitleElementDTO> normalized = subtitleNormalizationService.normalize(script, candidates,
             source.width(), TimelineContractLimits.NUMERIC_LIMITS.get("safeMarginRatio")).subtitles();
@@ -402,6 +411,74 @@ public class CreationProjectServiceImpl implements ICreationProjectService {
             throw sourceInvalid("创作来源文案无法生成初始字幕");
         }
         return normalized;
+    }
+
+    private List<SubtitleSourceRange> initialSubtitleSourceRanges(String script, int maxCodePoints) {
+        int[] codePoints = script.codePoints().toArray();
+        List<SubtitleClause> clauses = new ArrayList<>();
+        int start = 0;
+        for (int end = 1; end <= codePoints.length; end++) {
+            int codePoint = codePoints[end - 1];
+            boolean hardBoundary = isHardSubtitleBoundary(codePoint);
+            boolean softBoundary = isSoftSubtitleBoundary(codePoint);
+            boolean limitBoundary = end - start >= maxCodePoints;
+            boolean scriptEnd = end == codePoints.length;
+            if (hardBoundary || softBoundary || limitBoundary || scriptEnd) {
+                clauses.add(new SubtitleClause(start, end, hardBoundary || limitBoundary || scriptEnd));
+                start = end;
+            }
+        }
+
+        List<SubtitleSourceRange> ranges = new ArrayList<>();
+        int rangeStart = -1;
+        int rangeEnd = -1;
+        int visibleCodePoints = 0;
+        for (SubtitleClause clause : clauses) {
+            int clauseVisibleCodePoints = visibleSubtitleCodePoints(codePoints, clause.startOffset(),
+                clause.endOffset());
+            if (rangeStart >= 0 && visibleCodePoints >= DEFAULT_SUBTITLE_MIN_CODE_POINTS
+                && visibleCodePoints + clauseVisibleCodePoints > DEFAULT_SUBTITLE_PREFERRED_CODE_POINTS) {
+                ranges.add(new SubtitleSourceRange(rangeStart, rangeEnd));
+                rangeStart = -1;
+                visibleCodePoints = 0;
+            }
+            if (rangeStart < 0) {
+                rangeStart = clause.startOffset();
+            }
+            rangeEnd = clause.endOffset();
+            visibleCodePoints += clauseVisibleCodePoints;
+            if (clause.hardBoundary()) {
+                ranges.add(new SubtitleSourceRange(rangeStart, rangeEnd));
+                rangeStart = -1;
+                visibleCodePoints = 0;
+            }
+        }
+        if (rangeStart >= 0) {
+            ranges.add(new SubtitleSourceRange(rangeStart, rangeEnd));
+        }
+        return List.copyOf(ranges);
+    }
+
+    private int visibleSubtitleCodePoints(int[] codePoints, int startOffset, int endOffset) {
+        int visible = 0;
+        for (int index = startOffset; index < endOffset; index++) {
+            int codePoint = codePoints[index];
+            if (!Character.isWhitespace(codePoint) && !isHardSubtitleBoundary(codePoint)
+                && !isSoftSubtitleBoundary(codePoint)) {
+                visible++;
+            }
+        }
+        return visible;
+    }
+
+    private boolean isHardSubtitleBoundary(int codePoint) {
+        return codePoint == '。' || codePoint == '.' || codePoint == '！' || codePoint == '!'
+            || codePoint == '？' || codePoint == '?' || codePoint == '\n' || codePoint == '\r';
+    }
+
+    private boolean isSoftSubtitleBoundary(int codePoint) {
+        return codePoint == '，' || codePoint == ',' || codePoint == '；' || codePoint == ';'
+            || codePoint == '：' || codePoint == ':' || codePoint == '、';
     }
 
     private CreationProjectDTO toDto(CreationProject project, TimelineDraft draft) {
@@ -476,6 +553,12 @@ public class CreationProjectServiceImpl implements ICreationProjectService {
 
     private String nullToEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private record SubtitleClause(int startOffset, int endOffset, boolean hardBoundary) {
+    }
+
+    private record SubtitleSourceRange(int startOffset, int endOffset) {
     }
 
     private record ProjectRequest(String sourceId, String projectTitle, String idempotencyKey, String requestDigest) {

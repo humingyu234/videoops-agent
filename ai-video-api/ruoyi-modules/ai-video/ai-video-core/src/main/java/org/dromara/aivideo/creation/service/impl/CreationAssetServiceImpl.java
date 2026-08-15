@@ -3,6 +3,7 @@ package org.dromara.aivideo.creation.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.dromara.aivideo.asset.service.VideoOpsObjectKey;
 import org.dromara.aivideo.creation.domain.CreationAsset;
 import org.dromara.aivideo.creation.dto.CreationAssetDTO;
 import org.dromara.aivideo.creation.dto.CreationAssetQueryDTO;
@@ -47,10 +48,10 @@ import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.oss.client.OssClient;
-import org.dromara.common.oss.factory.OssFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -79,7 +80,8 @@ public class CreationAssetServiceImpl implements ICreationAssetService {
     private static final Pattern IDEMPOTENCY_KEY = Pattern.compile("[A-Za-z0-9._:-]{1,64}");
     private static final Pattern LOWER_HEX_DIGEST = Pattern.compile("[0-9a-f]{64}");
     private static final Pattern RENDER_STORAGE_KEY = Pattern.compile(
-        "^timeline-renders/(\\d+)/(\\d+)/(\\d+)/([0-9a-f]{64})\\.mp4$");
+        "^" + Pattern.quote(VideoOpsObjectKey.PREFIX)
+            + "/timeline-renders/(\\d+)/(\\d+)/(\\d+)/([0-9a-f]{64})\\.mp4$");
     private static final String PENDING_SHA256 = "0".repeat(64);
     private static final Duration OSS_DOWNLOAD_TIMEOUT = Duration.ofSeconds(30);
 
@@ -92,17 +94,33 @@ public class CreationAssetServiceImpl implements ICreationAssetService {
     private final DigitalHumanGenerationJobMapper digitalHumanJobMapper;
     private final IDigitalHumanGenerationService digitalHumanGenerationService;
     private final ITimelineMediaRenderService mediaRenderService;
+    private final ObjectProvider<OssClient> ossClientProvider;
 
     public CreationAssetServiceImpl(CreationAssetMapper assetMapper) {
         this(assetMapper, null, null, null, null, null, null, null,
-            (ITimelineMediaRenderService) null);
+            (ITimelineMediaRenderService) null, null);
+    }
+
+    CreationAssetServiceImpl(CreationAssetMapper assetMapper, ObjectProvider<OssClient> ossClientProvider) {
+        this(assetMapper, null, null, null, null, null, null, null,
+            (ITimelineMediaRenderService) null, ossClientProvider);
     }
 
     public CreationAssetServiceImpl(CreationAssetMapper assetMapper, TimelineAssetRefMapper assetRefMapper,
                                     CreationProjectMapper projectMapper, AiTaskMapper taskMapper,
                                     AiTaskExecutionMapper taskExecutionMapper) {
         this(assetMapper, assetRefMapper, projectMapper, taskMapper, taskExecutionMapper,
-            null, null, null, (ITimelineMediaRenderService) null);
+            null, null, null, (ITimelineMediaRenderService) null, null);
+    }
+
+    CreationAssetServiceImpl(CreationAssetMapper assetMapper, TimelineAssetRefMapper assetRefMapper,
+                             CreationProjectMapper projectMapper, AiTaskMapper taskMapper,
+                             AiTaskExecutionMapper taskExecutionMapper, AppUserMapper appUserMapper,
+                              DigitalHumanGenerationJobMapper digitalHumanJobMapper,
+                              IDigitalHumanGenerationService digitalHumanGenerationService,
+                              ITimelineMediaRenderService mediaRenderService) {
+        this(assetMapper, assetRefMapper, projectMapper, taskMapper, taskExecutionMapper, appUserMapper,
+            digitalHumanJobMapper, digitalHumanGenerationService, mediaRenderService, null);
     }
 
     CreationAssetServiceImpl(CreationAssetMapper assetMapper, TimelineAssetRefMapper assetRefMapper,
@@ -110,7 +128,8 @@ public class CreationAssetServiceImpl implements ICreationAssetService {
                              AiTaskExecutionMapper taskExecutionMapper, AppUserMapper appUserMapper,
                              DigitalHumanGenerationJobMapper digitalHumanJobMapper,
                              IDigitalHumanGenerationService digitalHumanGenerationService,
-                             ITimelineMediaRenderService mediaRenderService) {
+                             ITimelineMediaRenderService mediaRenderService,
+                             ObjectProvider<OssClient> ossClientProvider) {
         this.assetMapper = assetMapper;
         this.assetRefMapper = assetRefMapper;
         this.projectMapper = projectMapper;
@@ -120,25 +139,27 @@ public class CreationAssetServiceImpl implements ICreationAssetService {
         this.digitalHumanJobMapper = digitalHumanJobMapper;
         this.digitalHumanGenerationService = digitalHumanGenerationService;
         this.mediaRenderService = mediaRenderService;
+        this.ossClientProvider = ossClientProvider;
     }
 
     @Autowired
     public CreationAssetServiceImpl(CreationAssetMapper assetMapper, TimelineAssetRefMapper assetRefMapper,
                                     CreationProjectMapper projectMapper, AiTaskMapper taskMapper,
-                                    AiTaskExecutionMapper taskExecutionMapper, AppUserMapper appUserMapper,
-                                    DigitalHumanGenerationJobMapper digitalHumanJobMapper,
-                                    ObjectProvider<IDigitalHumanGenerationService> digitalHumanGenerationServiceProvider,
-                                    ObjectProvider<ITimelineMediaRenderService> mediaRenderServiceProvider) {
+                                     AiTaskExecutionMapper taskExecutionMapper, AppUserMapper appUserMapper,
+                                     DigitalHumanGenerationJobMapper digitalHumanJobMapper,
+                                     ObjectProvider<IDigitalHumanGenerationService> digitalHumanGenerationServiceProvider,
+                                     ObjectProvider<ITimelineMediaRenderService> mediaRenderServiceProvider,
+                                     @Qualifier("aiVideoOssClient") ObjectProvider<OssClient> ossClientProvider) {
         this(assetMapper, assetRefMapper, projectMapper, taskMapper, taskExecutionMapper, appUserMapper,
             digitalHumanJobMapper, digitalHumanGenerationServiceProvider.getIfAvailable(),
-            mediaRenderServiceProvider.getIfAvailable());
+            mediaRenderServiceProvider.getIfAvailable(), ossClientProvider);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public CreationAssetDTO uploadOwned(long actorId, CreationAssetUploadDTO command, InputStream input) {
         UploadSpec spec = validateUpload(actorId, command, input);
-        OssClient client = OssFactory.instance();
+        OssClient client = requireOssClient();
         long generatedId = IdWorker.getId();
         String key = client.buildPathKey("creation-assets/" + actorId,
             generatedId + "-" + safeFileName(command.originalName(), spec.type()));
@@ -353,7 +374,7 @@ public class CreationAssetServiceImpl implements ICreationAssetService {
             }
             String actualSha256;
             try {
-                actualSha256 = ImmutableRenderObjectStore.uploadOrReuse(asset.getStorageKey(),
+                actualSha256 = ImmutableRenderObjectStore.uploadOrReuse(requireOssClient(), asset.getStorageKey(),
                     requireOutputStream(output), metadata.fileSize(), metadata.sha256());
             } catch (RuntimeException exception) {
                 if (exception instanceof ServiceException serviceException) {
@@ -438,7 +459,7 @@ public class CreationAssetServiceImpl implements ICreationAssetService {
     public void deleteOwned(long actorId, String assetId) {
         CreationAsset asset = requireOwned(actorId, assetId);
         assertAssetDeletable(actorId, assetId);
-        if (!OssFactory.instance().delete(asset.getStorageKey())) {
+        if (!requireOssClient().delete(asset.getStorageKey())) {
             throw new ServiceException("创作素材删除失败", ASSET_NOT_AVAILABLE);
         }
         if (assetMapper.deleteById(asset.getAssetId()) != 1) {
@@ -464,7 +485,7 @@ public class CreationAssetServiceImpl implements ICreationAssetService {
 
     private CreationMediaHandle open(CreationAsset asset, TimelineAssetUsageType usageType,
                                      long offset, long length, String rangeHeader) {
-        OssClient client = OssFactory.instance();
+        OssClient client = requireOssClient();
         String bucket = client.config().bucket().filter(value -> !value.isBlank())
             .orElseThrow(() -> new ServiceException("未配置创作素材存储桶", ASSET_NOT_AVAILABLE));
         InputStream stream = client.doCustomBufferedDownload(builder -> {
@@ -613,9 +634,9 @@ public class CreationAssetServiceImpl implements ICreationAssetService {
         if (existing != null) {
             return requireRegisteredDigitalHumanOutput(existing, type, sha256, media.content().length);
         }
-        OssClient client = OssFactory.instance();
-        String key = client.buildPathKey("creation-digital-human/" + actorId,
-            sourceRefId + "-" + sha256 + fileExtension(type, media.mediaType()));
+        OssClient client = requireOssClient();
+        String key = VideoOpsObjectKey.requireQualified(client.buildPathKey("creation-digital-human/" + actorId,
+            sourceRefId + "-" + sha256 + fileExtension(type, media.mediaType())));
         try {
             client.upload(key, new ByteArrayInputStream(media.content()), media.content().length);
         } catch (RuntimeException exception) {
@@ -742,6 +763,18 @@ public class CreationAssetServiceImpl implements ICreationAssetService {
         candidate = candidate.substring(candidate.lastIndexOf('/') + 1)
             .replaceAll("[^A-Za-z0-9._-]", "_");
         return candidate.isBlank() ? fallback : candidate.substring(0, Math.min(candidate.length(), 128));
+    }
+
+    private OssClient requireOssClient() {
+        try {
+            OssClient client = ossClientProvider == null ? null : ossClientProvider.getIfAvailable();
+            if (client != null) {
+                return client;
+            }
+        } catch (RuntimeException ignored) {
+            // Keep configuration and provider details inside the process boundary.
+        }
+        throw new ServiceException("VideoOps 对象存储未启用", ASSET_NOT_AVAILABLE);
     }
 
     private void deleteUploadedObject(OssClient client, String key) {
@@ -871,8 +904,8 @@ public class CreationAssetServiceImpl implements ICreationAssetService {
     }
 
     private String renderStorageKey(long actorId, long taskId, long inputVersionId, String outputConfigDigest) {
-        return "timeline-renders/" + actorId + "/" + taskId + "/" + inputVersionId + "/"
-            + outputConfigDigest + ".mp4";
+        return VideoOpsObjectKey.qualify("timeline-renders/" + actorId + "/" + taskId + "/"
+            + inputVersionId + "/" + outputConfigDigest + ".mp4");
     }
 
     private String renderRequestDigest(long taskId, long inputVersionId, String outputConfigDigest) {

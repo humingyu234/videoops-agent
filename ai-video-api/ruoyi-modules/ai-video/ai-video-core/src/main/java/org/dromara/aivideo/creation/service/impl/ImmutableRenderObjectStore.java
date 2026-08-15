@@ -2,7 +2,6 @@ package org.dromara.aivideo.creation.service.impl;
 
 import org.dromara.common.oss.client.OssClient;
 import org.dromara.common.oss.exception.S3StorageException;
-import org.dromara.common.oss.factory.OssFactory;
 import org.dromara.common.oss.model.Options;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
@@ -23,9 +22,8 @@ final class ImmutableRenderObjectStore {
     private ImmutableRenderObjectStore() {
     }
 
-    static String uploadOrReuse(String storageKey, InputStream input, long expectedSize,
+    static String uploadOrReuse(OssClient client, String storageKey, InputStream input, long expectedSize,
                                 String expectedSha256) throws IOException {
-        OssClient client = OssFactory.instance();
         try (DigestInputStream digestInput = new DigestInputStream(input, sha256())) {
             try {
                 client.upload(storageKey, digestInput, expectedSize,

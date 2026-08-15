@@ -96,9 +96,10 @@
 ## 本机开发与测试环境
 
 - 后端开发、调试、自动化测试和集成测试一律直接连接开发机本机安装的 MySQL 8（关系型数据库）与 Redis 7（缓存数据库）；禁止使用 Docker、Docker Compose、Testcontainers、WSL、虚拟机、Podman 或其他容器化、虚拟化运行环境。
+- VideoOps Agent 开发运行只允许连接独立 MySQL schema `videoops_agent_dev`；Redis 使用 DB 14、非空 `redisson.keyPrefix` 和匹配的 Sa-Token 物理前缀。可以复用同一个本机 MySQL/Redis 服务进程，但不得读取、写入或消费 `ai_video`、Redis DB 0 或旧项目前缀。
 - 集成测试只能使用本机专用 MySQL 数据库 `ai_video_test` 与 Redis 专用逻辑库；两端 `application-dev.yml` 只保留环境变量引用和非敏感结构配置，实际用户名、口令和密钥只能来自进程环境或不受 Git 跟踪的本地配置，测试日志不得输出凭据。
 - 集成测试夹具必须在连接前校验目标仅为 `localhost`、`127.0.0.1` 或 `::1`，MySQL 数据库必须为 `ai_video_test`，Redis 必须使用隔离逻辑库与本次运行前缀；缺少配置或校验不通过时立即失败，绝不回退到开发、预发或生产数据源，也不得执行 `FLUSHALL`。
-- 开发库基线数据初始化的唯一入口是 `docs/sql/ai-video/mysql/20260810_00_development_database_initialization.sql`。必须使用 `ai-video-user-api/src/main/resources/application-dev.yml` 中最终生效的 `spring.datasource.dynamic.datasource.master` 连接执行，禁止改用 `codex-local-stack.yml`、Docker 配置或其他旁路连接；SQL 在数据库客户端当前选中的数据库中执行，不硬编码或校验库名。具体数据范围与幂等规则见 `docs/DEVELOPMENT_DATABASE_INITIALIZATION.md`。
+- 独立开发库必须从当前仓库的基础 SQL、按依赖排序的版本化迁移和经审核的最小脱敏 seed 重建，禁止复制公司数据库。旧 `20260810_00_development_database_initialization.sql` 是广种子候选，在完成最小性与来源审计前不得作为 runtime fork 的初始化入口。所有建库/迁移命令必须先校验目标仅为本机 `videoops_agent_dev`，不得使用 `--force` 或在失败后盲目继续；具体边界见 `docs/DEVELOPMENT_DATABASE_INITIALIZATION.md` 与当前 runbook。
 - 本规则仅约束开发和测试环境，不改变生产部署的基础设施选型；两个启动应用仍必须分别执行路由暴露与安全边界 Smoke Test（冒烟测试）。
 
 ## 施工与验收硬边界

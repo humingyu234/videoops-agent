@@ -10,7 +10,7 @@
  * @doc https://umijs.org/docs/guides/proxy
  */
 const defaultApiTarget =
-  process.env.AI_VIDEO_API_ORIGIN ?? 'http://localhost:8080';
+  process.env.AI_VIDEO_API_ORIGIN ?? 'http://127.0.0.1:18081';
 const testApiTarget = process.env.AI_VIDEO_API_TEST_ORIGIN ?? defaultApiTarget;
 const preApiTarget = process.env.AI_VIDEO_API_PRE_ORIGIN ?? defaultApiTarget;
 

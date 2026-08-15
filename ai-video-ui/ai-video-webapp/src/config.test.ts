@@ -5,11 +5,17 @@ async function loadConfig() {
   return (await import('../config/config')).default;
 }
 
+async function loadProxyConfig() {
+  vi.resetModules();
+  return (await import('../config/proxy')).default;
+}
+
 describe('bundler configuration', () => {
   afterEach(() => {
     delete process.env.AI_VIDEO_DISABLE_UTOOPACK;
     delete process.env.AI_VIDEO_DISCOVERY_MOCK;
     delete process.env.AI_VIDEO_CREATION_TIMELINE_MOCK;
+    delete process.env.AI_VIDEO_API_ORIGIN;
   });
 
   it('keeps Utoopack inside the current app directory', async () => {
@@ -50,5 +56,21 @@ describe('bundler configuration', () => {
     expect(mockConfig.mock).toMatchObject({
       exclude: ['mock/!(creationTimeline|creationAssets).ts', 'mock/requestRecord.mock.js'],
     });
+  });
+
+  it('targets the independent local user API by default', async () => {
+    delete process.env.AI_VIDEO_API_ORIGIN;
+
+    const proxyConfig = await loadProxyConfig();
+
+    expect(proxyConfig.dev['/api/'].target).toBe('http://127.0.0.1:18081');
+  });
+
+  it('allows the local API origin to be overridden explicitly', async () => {
+    process.env.AI_VIDEO_API_ORIGIN = 'http://127.0.0.1:28081';
+
+    const proxyConfig = await loadProxyConfig();
+
+    expect(proxyConfig.dev['/api/'].target).toBe('http://127.0.0.1:28081');
   });
 });

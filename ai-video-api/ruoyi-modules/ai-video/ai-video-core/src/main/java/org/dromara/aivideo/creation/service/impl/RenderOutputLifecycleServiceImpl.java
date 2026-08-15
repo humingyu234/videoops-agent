@@ -28,7 +28,10 @@ import org.dromara.aivideo.timeline.dto.TimelineRenderResultDTO;
 import org.dromara.aivideo.timeline.service.TimelineRenderOutputHandle;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.mybatis.audit.AuditFillContext;
+import org.dromara.common.oss.client.OssClient;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -62,27 +65,38 @@ public class RenderOutputLifecycleServiceImpl implements IRenderOutputLifecycleS
     private final AiTaskExecutionMapper executionMapper;
     private final AiTaskAttemptMapper attemptMapper;
     private final TransactionTemplate transactionTemplate;
+    private final ObjectProvider<OssClient> ossClientProvider;
 
     RenderOutputLifecycleServiceImpl(ICreationAssetService assetService, CreationAssetMapper assetMapper,
                                      CreationProjectMapper projectMapper, AiTaskMapper taskMapper,
                                      AiTaskExecutionMapper executionMapper, AiTaskAttemptMapper attemptMapper) {
         this(assetService, assetMapper, projectMapper, taskMapper, executionMapper, attemptMapper,
-            (TransactionTemplate) null);
+            (TransactionTemplate) null, null);
+    }
+
+    RenderOutputLifecycleServiceImpl(ICreationAssetService assetService, CreationAssetMapper assetMapper,
+                                     CreationProjectMapper projectMapper, AiTaskMapper taskMapper,
+                                     AiTaskExecutionMapper executionMapper, AiTaskAttemptMapper attemptMapper,
+                                     ObjectProvider<OssClient> ossClientProvider) {
+        this(assetService, assetMapper, projectMapper, taskMapper, executionMapper, attemptMapper,
+            (TransactionTemplate) null, ossClientProvider);
     }
 
     @Autowired
     public RenderOutputLifecycleServiceImpl(ICreationAssetService assetService, CreationAssetMapper assetMapper,
-                                            CreationProjectMapper projectMapper, AiTaskMapper taskMapper,
-                                            AiTaskExecutionMapper executionMapper, AiTaskAttemptMapper attemptMapper,
-                                            PlatformTransactionManager transactionManager) {
+                                             CreationProjectMapper projectMapper, AiTaskMapper taskMapper,
+                                             AiTaskExecutionMapper executionMapper, AiTaskAttemptMapper attemptMapper,
+                                             PlatformTransactionManager transactionManager,
+                                             @Qualifier("aiVideoOssClient") ObjectProvider<OssClient> ossClientProvider) {
         this(assetService, assetMapper, projectMapper, taskMapper, executionMapper, attemptMapper,
-            new TransactionTemplate(transactionManager));
+            new TransactionTemplate(transactionManager), ossClientProvider);
     }
 
     private RenderOutputLifecycleServiceImpl(ICreationAssetService assetService, CreationAssetMapper assetMapper,
-                                             CreationProjectMapper projectMapper, AiTaskMapper taskMapper,
-                                             AiTaskExecutionMapper executionMapper, AiTaskAttemptMapper attemptMapper,
-                                             TransactionTemplate transactionTemplate) {
+                                              CreationProjectMapper projectMapper, AiTaskMapper taskMapper,
+                                              AiTaskExecutionMapper executionMapper, AiTaskAttemptMapper attemptMapper,
+                                              TransactionTemplate transactionTemplate,
+                                              ObjectProvider<OssClient> ossClientProvider) {
         this.assetService = Objects.requireNonNull(assetService, "assetService");
         this.assetMapper = Objects.requireNonNull(assetMapper, "assetMapper");
         this.projectMapper = Objects.requireNonNull(projectMapper, "projectMapper");
@@ -90,6 +104,7 @@ public class RenderOutputLifecycleServiceImpl implements IRenderOutputLifecycleS
         this.executionMapper = Objects.requireNonNull(executionMapper, "executionMapper");
         this.attemptMapper = Objects.requireNonNull(attemptMapper, "attemptMapper");
         this.transactionTemplate = transactionTemplate;
+        this.ossClientProvider = ossClientProvider;
     }
 
     @Override
@@ -384,13 +399,26 @@ public class RenderOutputLifecycleServiceImpl implements IRenderOutputLifecycleS
             throw renderUnavailable("渲染成品输出流无效");
         }
         try {
-            return ImmutableRenderObjectStore.uploadOrReuse(storageKey, input, expectedSize, expectedSha256);
+            return ImmutableRenderObjectStore.uploadOrReuse(requireOssClient(), storageKey, input, expectedSize,
+                expectedSha256);
         } catch (IOException | RuntimeException exception) {
             if (exception instanceof ServiceException serviceException) {
                 throw serviceException;
             }
             throw renderUnavailable("渲染成品上传失败");
         }
+    }
+
+    private OssClient requireOssClient() {
+        try {
+            OssClient client = ossClientProvider == null ? null : ossClientProvider.getIfAvailable();
+            if (client != null) {
+                return client;
+            }
+        } catch (RuntimeException ignored) {
+            // Keep configuration and provider details inside the process boundary.
+        }
+        throw renderUnavailable("VideoOps 对象存储未启用");
     }
 
     private boolean hasDurableReference(long actorId, String assetId) {

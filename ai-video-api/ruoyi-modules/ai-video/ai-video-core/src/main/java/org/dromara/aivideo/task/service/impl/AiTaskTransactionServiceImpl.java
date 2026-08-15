@@ -1682,12 +1682,13 @@ public class AiTaskTransactionServiceImpl implements IAiTaskTransactionService {
             .eq(AiTask::getTaskId, parsePositiveId(taskId, "任务不存在"))
             .eq(AiTask::getOwnerUserId, scope.ownerUserId())
             .eq(AiTask::getActorType, APP_USER)
-            .eq(AiTask::getActorId, scope.ownerUserId())
-            .apply("(resource_type <> 'workflow_order' OR EXISTS (SELECT 1 FROM av_workflow_order o "
-                    + "WHERE o.order_id = av_ai_task.resource_id AND o.tenant_id = {0} AND o.owner_user_id = {1} "
-                    + "AND o.workspace_id = {2}))",
-                scope.tenantId(), scope.ownerUserId(), scope.workspaceId()));
+            .eq(AiTask::getActorId, scope.ownerUserId()));
         if (task == null) {
+            throw taskNotFound();
+        }
+        if (AiTaskResourceType.WORKFLOW_ORDER.value().equals(task.getResourceType())
+            && taskMapper.countOwnedWorkflowOrder(task.getResourceId(), scope.tenantId(), scope.ownerUserId(),
+                scope.workspaceId()) != 1) {
             throw taskNotFound();
         }
         return task;

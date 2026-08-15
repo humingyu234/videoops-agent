@@ -2,7 +2,6 @@ package org.dromara.aivideo.asset.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aivideo.asset.PortraitImageMetadata;
 import org.dromara.aivideo.asset.PortraitImageValidator;
@@ -16,13 +15,15 @@ import org.dromara.aivideo.asset.dto.UploadVoiceSampleDTO;
 import org.dromara.aivideo.asset.mapper.AssetFileMapper;
 import org.dromara.aivideo.asset.service.IAssetService;
 import org.dromara.aivideo.asset.service.PortraitAssetReader;
+import org.dromara.aivideo.asset.service.VideoOpsObjectKey;
 import org.dromara.aivideo.asset.service.VoiceAssetReader;
 import org.dromara.aivideo.identity.dto.AppPrincipalSnapshotDTO;
 import org.dromara.aivideo.identity.dto.AppWorkspaceSessionSnapshotDTO;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.oss.client.OssClient;
-import org.dromara.common.oss.factory.OssFactory;
 import org.dromara.common.oss.model.Options;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -39,16 +40,27 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /** 私有文件上传、访问和删除编排。 */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class AssetServiceImpl implements IAssetService {
     private static final String PORTRAIT_CATEGORY = "portrait_image";
     private static final String VOICE_CATEGORY = "voice_sample";
     private static final int ASSET_INVALID = 46302;
     private static final int ASSET_DELETE_FAILED = 46211;
+    private static final int ASSET_STORAGE_UNAVAILABLE = 46213;
     private final AssetFileMapper assetMapper;
     private final PortraitImageValidator imageValidator;
     private final VoiceSampleValidator voiceValidator;
+    private final ObjectProvider<OssClient> ossClientProvider;
+
+    public AssetServiceImpl(AssetFileMapper assetMapper,
+                            PortraitImageValidator imageValidator,
+                            VoiceSampleValidator voiceValidator,
+                            @Qualifier("aiVideoOssClient") ObjectProvider<OssClient> ossClientProvider) {
+        this.assetMapper = assetMapper;
+        this.imageValidator = imageValidator;
+        this.voiceValidator = voiceValidator;
+        this.ossClientProvider = ossClientProvider;
+    }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -59,8 +71,9 @@ public class AssetServiceImpl implements IAssetService {
         }
         PortraitImageMetadata metadata = imageValidator.validate(command.fileName(), command.contentType(), command.content());
         AppWorkspaceSessionSnapshotDTO workspace = requireWorkspace(principal);
-        OssClient client = OssFactory.instance();
-        String key = client.buildPathKey("portraits/" + principal.appUserId(), UUID.randomUUID() + metadata.fileSuffix());
+        OssClient client = requireOssClient();
+        String key = VideoOpsObjectKey.requireQualified(
+            client.buildPathKey("portraits/" + principal.appUserId(), UUID.randomUUID() + metadata.fileSuffix()));
         try {
             client.upload(key, command.content(), Options.builder().setContentType(metadata.contentType()));
         } catch (RuntimeException exception) {
@@ -145,12 +158,12 @@ public class AssetServiceImpl implements IAssetService {
             throw new ServiceException("声音文件不能为空", VoiceSampleValidator.FILE_TYPE_NOT_ALLOWED);
         }
         AppWorkspaceSessionSnapshotDTO workspace = requireWorkspace(principal);
-        OssClient client = OssFactory.instance();
+        OssClient client = requireOssClient();
         try (BufferedInputStream input = new BufferedInputStream(command.content())) {
             VoiceSampleMetadata metadata = voiceValidator.validate(
                 command.fileName(), command.contentType(), command.fileSize(), input);
-            String key = client.buildPathKey("voices/" + principal.appUserId(),
-                UUID.randomUUID() + "." + metadata.format());
+            String key = VideoOpsObjectKey.requireQualified(client.buildPathKey("voices/" + principal.appUserId(),
+                UUID.randomUUID() + "." + metadata.format()));
             client.upload(key, input, metadata.size());
             AssetFile asset = new AssetFile();
             asset.setTenantId(workspace.tenantId());
@@ -195,7 +208,7 @@ public class AssetServiceImpl implements IAssetService {
             throw invalidAsset();
         }
         AssetDTO dto = toDTO(asset);
-        return OssFactory.instance().download(asset.getObjectKey(), (ignored, input) -> reader.read(dto, input));
+        return requireOssClient().download(asset.getObjectKey(), (ignored, input) -> reader.read(dto, input));
     }
 
     @Override
@@ -206,7 +219,7 @@ public class AssetServiceImpl implements IAssetService {
             throw invalidAsset();
         }
         AssetDTO dto = toDTO(asset);
-        return OssFactory.instance().download(asset.getObjectKey(), (ignored, input) -> reader.read(dto, input));
+        return requireOssClient().download(asset.getObjectKey(), (ignored, input) -> reader.read(dto, input));
     }
 
     @Override
@@ -215,7 +228,7 @@ public class AssetServiceImpl implements IAssetService {
         if (!"ready".equals(asset.getStatus()) || !VOICE_CATEGORY.equals(asset.getCategory())) {
             throw new ServiceException("人物照片尚不可预览", 46209);
         }
-        return OssFactory.instance().presignGetUrl(asset.getObjectKey(), Duration.ofSeconds(120));
+        return requireOssClient().presignGetUrl(asset.getObjectKey(), Duration.ofSeconds(120));
     }
 
     @Override
@@ -225,7 +238,7 @@ public class AssetServiceImpl implements IAssetService {
             throw new ServiceException("人物照片尚不可预览", 46209);
         }
         LocalDateTime expiresAt = LocalDateTime.now().plusSeconds(120);
-        String url = OssFactory.instance().presignGetUrl(asset.getObjectKey(), Duration.ofSeconds(120));
+        String url = requireOssClient().presignGetUrl(asset.getObjectKey(), Duration.ofSeconds(120));
         return new AssetAccessUrlDTO(url, expiresAt, asset.getContentType());
     }
 
@@ -236,7 +249,7 @@ public class AssetServiceImpl implements IAssetService {
             throw new ServiceException("工作流素材尚不可访问", 46209);
         }
         LocalDateTime expiresAt = LocalDateTime.now().plusSeconds(120);
-        String url = OssFactory.instance().presignGetUrl(asset.getObjectKey(), Duration.ofSeconds(120));
+        String url = requireOssClient().presignGetUrl(asset.getObjectKey(), Duration.ofSeconds(120));
         return new AssetAccessUrlDTO(url, expiresAt, asset.getContentType());
     }
 
@@ -244,7 +257,7 @@ public class AssetServiceImpl implements IAssetService {
     public void deleteOwnedAsset(String assetId, AppPrincipalSnapshotDTO principal) {
         AssetFile asset = requireOwned(assetId, principal);
         try {
-            if (!OssFactory.instance().delete(asset.getObjectKey())) {
+            if (!requireOssClient().delete(asset.getObjectKey())) {
                 throw new ServiceException("人物照片文件删除失败", ASSET_DELETE_FAILED);
             }
         } catch (ServiceException exception) {
@@ -272,7 +285,7 @@ public class AssetServiceImpl implements IAssetService {
     public void deleteObject(String assetId, AppPrincipalSnapshotDTO principal) {
         AssetFile asset = requireOwned(assetId, principal);
         try {
-            if (!OssFactory.instance().delete(asset.getObjectKey())) {
+            if (!requireOssClient().delete(asset.getObjectKey())) {
                 throw new ServiceException("人物照片文件删除失败", ASSET_DELETE_FAILED);
             }
         } catch (ServiceException exception) {
@@ -296,7 +309,7 @@ public class AssetServiceImpl implements IAssetService {
         int safeLimit = Math.min(limit, 100);
         List<AssetFile> candidates = assetMapper.selectUnboundPortraitAssetsBefore(cutoff, safeLimit);
         if (candidates == null || candidates.isEmpty()) return 0;
-        OssClient client = OssFactory.instance();
+        OssClient client = requireOssClient();
         int cleaned = 0;
         for (AssetFile candidate : candidates) {
             if (candidate == null || candidate.getAssetId() == null || candidate.getObjectKey() == null) continue;
@@ -353,6 +366,7 @@ public class AssetServiceImpl implements IAssetService {
             || !TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException("voice asset deletion requires an active transaction");
         }
+        OssClient client = requireOssClient();
         AppWorkspaceSessionSnapshotDTO workspace = requireWorkspace(principal);
         long parsedVoiceId = parseId(voiceId);
         long parsedId = parseId(assetId);
@@ -373,7 +387,7 @@ public class AssetServiceImpl implements IAssetService {
             @Override
             public void afterCommit() {
                 try {
-                    if (!OssFactory.instance().delete(objectKey)) {
+                    if (!client.delete(objectKey)) {
                         log.error("voice asset object purge failed: voiceId={}, assetId={}, tenantId={}, workspaceId={}, ownerId={}, errorType={}",
                             stableVoiceId, stableAssetId, tenantId, workspaceId, ownerId, "DeleteReturnedFalse");
                     }
@@ -426,6 +440,18 @@ public class AssetServiceImpl implements IAssetService {
         if (!workspace.permissions().contains(permission)) {
             throw new ServiceException("无人物形象操作权限", 403);
         }
+    }
+
+    private OssClient requireOssClient() {
+        try {
+            OssClient client = ossClientProvider.getIfAvailable();
+            if (client != null) {
+                return client;
+            }
+        } catch (RuntimeException ignored) {
+            // Keep configuration and provider details inside the process boundary.
+        }
+        throw new ServiceException("VideoOps 对象存储未启用", ASSET_STORAGE_UNAVAILABLE);
     }
 
     private long parseId(String id) {

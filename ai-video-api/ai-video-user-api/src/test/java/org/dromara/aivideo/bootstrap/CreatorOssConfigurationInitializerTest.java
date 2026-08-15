@@ -28,11 +28,11 @@ class CreatorOssConfigurationInitializerTest {
         when(jdbcTemplate.queryForMap(anyString())).thenReturn(ossRow("0"));
 
         OssProperties expected = new OssProperties();
-        expected.setAccessKey("ruoyi");
-        expected.setSecretKey("ruoyi123");
-        expected.setBucketName("ruoyi");
-        expected.setPrefix("");
-        expected.setEndpoint("127.0.0.1:9000");
+        expected.setAccessKey("sentinel-access");
+        expected.setSecretKey("sentinel-secret");
+        expected.setBucketName("sentinel-bucket");
+        expected.setPrefix("videoops-agent/dev");
+        expected.setEndpoint("sentinel-endpoint");
         expected.setDomainUrl("");
         expected.setIsHttps("N");
         expected.setRegion("");
@@ -40,7 +40,7 @@ class CreatorOssConfigurationInitializerTest {
 
         new CreatorOssConfigurationInitializer(jdbcTemplate, configurationCache).run(null);
 
-        verify(configurationCache).put("minio", expected);
+        verify(configurationCache).put("videoops-agent-dev", expected);
     }
 
     @ParameterizedTest
@@ -60,14 +60,29 @@ class CreatorOssConfigurationInitializerTest {
         verifyNoInteractions(configurationCache);
     }
 
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"", "ai-video", "videoops-agent/dev/"})
+    void rejectsEmptyOrLegacyNamespacesWithoutCachingThem(String prefix) {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        CreatorOssConfigurationCache configurationCache = mock(CreatorOssConfigurationCache.class);
+        Map<String, Object> row = ossRow("0");
+        row.put("prefix", prefix);
+        when(jdbcTemplate.queryForMap(anyString())).thenReturn(row);
+
+        assertThatThrownBy(() -> new CreatorOssConfigurationInitializer(jdbcTemplate, configurationCache).run(null))
+            .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(configurationCache);
+    }
+
     private Map<String, Object> ossRow(String accessPolicy) {
         Map<String, Object> row = new HashMap<>();
-        row.put("config_key", "minio");
-        row.put("access_key", "ruoyi");
-        row.put("secret_key", "ruoyi123");
-        row.put("bucket_name", "ruoyi");
-        row.put("prefix", "");
-        row.put("endpoint", "127.0.0.1:9000");
+        row.put("config_key", "videoops-agent-dev");
+        row.put("access_key", "sentinel-access");
+        row.put("secret_key", "sentinel-secret");
+        row.put("bucket_name", "sentinel-bucket");
+        row.put("prefix", "videoops-agent/dev");
+        row.put("endpoint", "sentinel-endpoint");
         row.put("domain_url", "");
         row.put("is_https", "N");
         row.put("region", "");

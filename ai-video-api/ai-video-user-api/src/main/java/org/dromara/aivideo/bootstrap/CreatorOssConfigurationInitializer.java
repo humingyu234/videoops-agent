@@ -2,10 +2,12 @@ package org.dromara.aivideo.bootstrap;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.aivideo.asset.service.VideoOpsObjectKey;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.oss.properties.OssProperties;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -17,6 +19,7 @@ import java.util.Map;
  */
 @Slf4j
 @Component
+@ConditionalOnProperty(prefix = "aivideo.oss", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class CreatorOssConfigurationInitializer implements ApplicationRunner {
 
@@ -46,6 +49,7 @@ public class CreatorOssConfigurationInitializer implements ApplicationRunner {
                 return;
             }
             OssProperties properties = toProperties(row);
+            VideoOpsObjectKey.requireProjectPrefix(properties.getPrefix());
             configurationCache.put(configKey, properties);
             log.info("Creator OSS configuration initialized: {}", configKey);
         } catch (EmptyResultDataAccessException exception) {

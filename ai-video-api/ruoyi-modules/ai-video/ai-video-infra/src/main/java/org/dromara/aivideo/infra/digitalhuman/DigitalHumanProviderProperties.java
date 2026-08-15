@@ -37,11 +37,14 @@ public class DigitalHumanProviderProperties {
     @Getter
     @Setter
     public static class ComfyUi {
+        static final String REQUIRED_UPLOAD_SUBFOLDER = "videoops-agent/dev";
+
         private String baseUrl;
         private String basicUser;
         private String basicPassword;
         private String workflowFile;
         private String workflowId;
+        private String uploadSubfolder = REQUIRED_UPLOAD_SUBFOLDER;
         private List<String> insecureHttpAllowedHosts = List.of();
         private boolean insecureSkipTlsVerify;
     }

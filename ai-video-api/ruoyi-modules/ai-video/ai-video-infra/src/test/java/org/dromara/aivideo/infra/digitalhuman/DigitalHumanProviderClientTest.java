@@ -234,10 +234,10 @@ class DigitalHumanProviderClientTest {
             }
             """.getBytes(StandardCharsets.UTF_8));
         server.enqueue(200, "application/json", """
-            {"name":"portrait-upload.png","subfolder":"digital-human","type":"input"}
+            {"name":"portrait-upload.png","subfolder":"videoops-agent/dev","type":"input"}
             """.getBytes(StandardCharsets.UTF_8));
         server.enqueue(200, "application/json", """
-            {"name":"voice-upload.wav","subfolder":"digital-human","type":"input"}
+            {"name":"voice-upload.wav","subfolder":"videoops-agent/dev","type":"input"}
             """.getBytes(StandardCharsets.UTF_8));
         server.enqueue(200, "application/json", """
             {"prompt_id":"prompt-42","number":7,"node_errors":{}}
@@ -274,8 +274,7 @@ class DigitalHumanProviderClientTest {
             .contains("name=\"image\"; filename=\"digital-human-portrait-")
             .contains("Content-Type: image/png")
             .contains("PORTRAIT")
-            .contains("name=\"subfolder\"")
-            .contains("digital-human")
+            .contains("name=\"subfolder\"\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nvideoops-agent/dev")
             .contains("name=\"type\"")
             .contains("input");
 
@@ -297,10 +296,10 @@ class DigitalHumanProviderClientTest {
         JsonNode prompt = JsonMapper.builder().build().readTree(submit.body()).path("prompt");
         assertThat(prompt.path("284").path("class_type").asString()).isEqualTo("LoadImage");
         assertThat(prompt.path("284").path("inputs").path("image").asString())
-            .isEqualTo("digital-human/portrait-upload.png");
+            .isEqualTo("videoops-agent/dev/portrait-upload.png");
         assertThat(prompt.path("284").path("inputs").has("upload")).isFalse();
         assertThat(prompt.path("125").path("inputs").path("audio").asString())
-            .isEqualTo("digital-human/voice-upload.wav");
+            .isEqualTo("videoops-agent/dev/voice-upload.wav");
         assertThat(prompt.path("125").path("inputs").has("audioUI")).isFalse();
         assertThat(prompt.path("131").path("inputs").path("images").toString()).isEqualTo("[\"400\",0]");
         assertThat(prompt.path("131").path("inputs").path("frame_rate").asInt()).isEqualTo(25);
@@ -335,6 +334,20 @@ class DigitalHumanProviderClientTest {
         assertThat(result.mediaType()).isEqualTo("video/mp4");
         assertThat(result.fileExtension()).isEqualTo("mp4");
         assertThat(result.failureCode()).isNull();
+    }
+
+    @Test
+    void rejectsUnsafeUploadSubfolderBeforeAnyProviderRequest() {
+        for (String invalid : new String[] {null, "", "digital-human", "videoops-agent/dev/../legacy"}) {
+            DigitalHumanProviderProperties.ComfyUi properties = comfyProperties();
+            properties.setUploadSubfolder(invalid);
+
+            assertThatThrownBy(() -> new ComfyUiClient(properties))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("上传目录配置无效");
+        }
+
+        assertThat(server.requestCount()).isZero();
     }
 
     @Test

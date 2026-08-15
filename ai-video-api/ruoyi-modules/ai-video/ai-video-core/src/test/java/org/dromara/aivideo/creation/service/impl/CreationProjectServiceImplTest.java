@@ -41,6 +41,7 @@ import java.lang.reflect.RecordComponent;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -111,6 +112,50 @@ class CreationProjectServiceImplTest {
             "timeline-1", "main_video", "subtitle", "server snapshot", "501",
             "\"width\":1080", "\"height\":1920", "\"frameRate\":30", "\"fitMode\":\"cover\"");
         verify(assetService).resolveDigitalHumanSource(7L, "99");
+    }
+
+    @Test
+    void createsReadableInitialSubtitlesAtNaturalPhraseBoundariesWithContrastOutline() {
+        String script = "大家好，我是由 VideoOps Agent 驱动的数字人。"
+            + "它能把一句视频交付目标拆成清晰步骤，选择真实人物和声音，调用数字人、字幕与渲染工具，"
+            + "持续跟踪任务状态，并在出现问题时保留证据、局部修复。"
+            + "现在你看到的内容，不是演示数据，而是一条真实、可追踪、可复现的视频生产链路。";
+        when(assetService.resolveDigitalHumanSource(7L, "99")).thenReturn(source(script, 25_800L));
+        when(projectMapper.insert(any(CreationProject.class))).thenReturn(1);
+        when(draftMapper.insert(any(TimelineDraft.class))).thenReturn(1);
+        AtomicReference<List<TimelineSubtitleElementDTO>> captured = new AtomicReference<>();
+        ISubtitleNormalizationService normalizer = (sourceScript, subtitles, width, safeMargin) -> {
+            captured.set(List.copyOf(subtitles));
+            return new ISubtitleNormalizationService.NormalizationResult(subtitles, List.of());
+        };
+
+        service(normalizer).create(7L, command());
+
+        List<TimelineSubtitleElementDTO> subtitles = captured.get();
+        assertThat(subtitles).extracting(TimelineSubtitleElementDTO::sourceTextSnapshot).containsExactly(
+            "大家好，我是由 VideoOps Agent 驱动的数字人。",
+            "它能把一句视频交付目标拆成清晰步骤，",
+            "选择真实人物和声音，调用数字人、",
+            "字幕与渲染工具，持续跟踪任务状态，",
+            "并在出现问题时保留证据、局部修复。",
+            "现在你看到的内容，不是演示数据，",
+            "而是一条真实、可追踪、",
+            "可复现的视频生产链路。");
+        assertThat(subtitles.stream().map(TimelineSubtitleElementDTO::sourceTextSnapshot).reduce("", String::concat))
+            .isEqualTo(script);
+        assertThat(subtitles.getFirst().startMs()).isZero();
+        assertThat(subtitles.getLast().endMs()).isEqualTo(25_800L);
+        for (int index = 1; index < subtitles.size(); index++) {
+            assertThat(subtitles.get(index).startMs()).isEqualTo(subtitles.get(index - 1).endMs());
+            assertThat(subtitles.get(index).startMs()).isLessThan(subtitles.get(index).endMs());
+        }
+        assertThat(subtitles).allSatisfy(subtitle -> {
+            assertThat(subtitle.backgroundEnabled()).isFalse();
+            assertThat(subtitle.backgroundColor()).isNull();
+            assertThat(subtitle.outlineEnabled()).isTrue();
+            assertThat(subtitle.outlineColor()).isEqualTo("#000000FF");
+            assertThat(subtitle.outlineWidthPx()).isEqualTo(3);
+        });
     }
 
     @Test
@@ -289,6 +334,10 @@ class CreationProjectServiceImplTest {
         ISubtitleNormalizationService normalizer = (script, subtitles, width, safeMargin) ->
             new ISubtitleNormalizationService.NormalizationResult(subtitles.stream()
                 .map(this::normalizedSubtitle).toList(), List.of());
+        return service(normalizer);
+    }
+
+    private CreationProjectServiceImpl service(ISubtitleNormalizationService normalizer) {
         return new CreationProjectServiceImpl(projectMapper, draftMapper, assetService, assetMapper, taskMapper,
             normalizer, JsonMapper.builder().build());
     }
@@ -344,8 +393,12 @@ class CreationProjectServiceImplTest {
     }
 
     private DigitalHumanCreationSourceDTO source() {
+        return source("server snapshot", 3_000L);
+    }
+
+    private DigitalHumanCreationSourceDTO source(String script, long durationMs) {
         return new DigitalHumanCreationSourceDTO(
-            "99", "501", "502", "server snapshot", 3_000L, 768, 1024, 25, List.of());
+            "99", "501", "502", script, durationMs, 768, 1024, 25, List.of());
     }
 
     private CreationProject project(long projectId, long ownerUserId, String title, Long outputAssetId,

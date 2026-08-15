@@ -10,6 +10,7 @@ import org.dromara.aivideo.task.domain.AiTask;
 import org.dromara.aivideo.task.domain.AiTaskAttempt;
 import org.dromara.aivideo.task.domain.AiTaskExecution;
 import org.dromara.aivideo.task.dto.AiTaskCompletionDTO;
+import org.dromara.aivideo.task.dto.AiTaskAccessScopeDTO;
 import org.dromara.aivideo.task.dto.AiTaskDTO;
 import org.dromara.aivideo.task.dto.AiTaskImagePromptPayloadDTO;
 import org.dromara.aivideo.task.dto.AiTaskImagePromptResultPayloadDTO;
@@ -89,6 +90,49 @@ class AiTaskTransactionServiceImplTest {
         initialize(TimelineDraft.class);
         initialize(TimelineVersion.class);
         initialize(TimelineAssetRef.class);
+    }
+
+    @Test
+    void scopedTimelineTaskReadDoesNotDependOnWorkflowOrderStorage() {
+        AiTask task = runningTask(AiTaskStatus.SUCCESS.value(), 1L);
+        when(taskMapper.selectOne(any(Wrapper.class))).thenReturn(task);
+
+        AiTaskDTO result = service().getOwned(new AiTaskAccessScopeDTO(2001L, 7L, "personal-7"), "701");
+
+        assertThat(result.taskId()).isEqualTo("701");
+        ArgumentCaptor<Wrapper> query = ArgumentCaptor.forClass(Wrapper.class);
+        verify(taskMapper).selectOne(query.capture());
+        assertThat(query.getValue().getSqlSegment())
+            .doesNotContainIgnoringCase("av_workflow_order")
+            .doesNotContainIgnoringCase("exists");
+        verify(taskMapper, never()).countOwnedWorkflowOrder(any(), any(), any(), any());
+    }
+
+    @Test
+    void scopedWorkflowTaskStillRequiresTheWorkspaceOwnedOrder() {
+        AiTask task = runningTask(AiTaskStatus.SUCCESS.value(), 1L);
+        task.setResourceType(AiTaskResourceType.WORKFLOW_ORDER.value());
+        when(taskMapper.selectOne(any(Wrapper.class))).thenReturn(task);
+        when(taskMapper.countOwnedWorkflowOrder(900L, 2001L, 7L, "personal-7")).thenReturn(0);
+
+        assertThatThrownBy(() -> service().getOwned(
+            new AiTaskAccessScopeDTO(2001L, 7L, "personal-7"), "701"))
+            .isInstanceOf(ServiceException.class);
+        verify(taskMapper).countOwnedWorkflowOrder(900L, 2001L, 7L, "personal-7");
+    }
+
+    @Test
+    void scopedWorkflowTaskAllowsTheWorkspaceOwnedOrder() {
+        AiTask task = runningTask(AiTaskStatus.SUCCESS.value(), 1L);
+        task.setResourceType(AiTaskResourceType.WORKFLOW_ORDER.value());
+        when(taskMapper.selectOne(any(Wrapper.class))).thenReturn(task);
+        when(taskMapper.countOwnedWorkflowOrder(900L, 2001L, 7L, "personal-7")).thenReturn(1);
+
+        AiTaskDTO result = service().getOwned(
+            new AiTaskAccessScopeDTO(2001L, 7L, "personal-7"), "701");
+
+        assertThat(result.taskId()).isEqualTo("701");
+        verify(taskMapper).countOwnedWorkflowOrder(900L, 2001L, 7L, "personal-7");
     }
 
     @Test

@@ -1,12 +1,18 @@
 ﻿[CmdletBinding()]
 param(
     [ValidateRange(1, 65535)]
-    [int]$Port = 8080,
+    [int]$Port = 18081,
 
     [switch]$SkipBuild,
 
+    [switch]$EnableGoldenPath,
+
     [string]$LocalConfigPath
 )
+
+if ($Port -ne 18081) {
+    throw '本地创作端后端只允许监听 18081。'
+}
 
 $ErrorActionPreference = 'Stop'
 
@@ -23,6 +29,24 @@ function New-LocalRuntimeSecret {
     }
 }
 
+function Protect-LocalSecretFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    $acl = [System.Security.AccessControl.FileSecurity]::new()
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.SetOwner($currentUser)
+    $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new(
+        $currentUser,
+        [System.Security.AccessControl.FileSystemRights]::FullControl,
+        [System.Security.AccessControl.AccessControlType]::Allow
+    ))
+    Set-Acl -LiteralPath $Path -AclObject $acl
+}
+
 function Get-OrCreateLocalRuntimeSecrets {
     param(
         [Parameter(Mandatory = $true)]
@@ -33,6 +57,7 @@ function Get-OrCreateLocalRuntimeSecrets {
     )
 
     if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        Protect-LocalSecretFile -Path $Path
         try {
             $savedSecrets = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
         }
@@ -66,15 +91,61 @@ function Get-OrCreateLocalRuntimeSecrets {
         $result[$name] = New-LocalRuntimeSecret
     }
     $result | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding UTF8
+    Protect-LocalSecretFile -Path $Path
     return $result
+}
+
+function Resolve-FailClosedBooleanEnvironmentVariable {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $rawValue = [Environment]::GetEnvironmentVariable($Name, 'Process')
+    if ([string]::IsNullOrWhiteSpace($rawValue)) {
+        return 'false'
+    }
+    if ([string]::Equals($rawValue, 'true', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return 'true'
+    }
+    if ([string]::Equals($rawValue, 'false', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return 'false'
+    }
+    throw "$Name 只允许设置为 true 或 false。"
+}
+
+function Assert-GoldenPathEnvironment {
+    $requiredNames = @(
+        'DIGITAL_HUMAN_INDEX_TTS2_BASE_URL',
+        'DIGITAL_HUMAN_INDEX_TTS2_BASIC_USER',
+        'VIDEOOPS_USER_DIGITAL_HUMAN_INDEX_TTS2_API_KEY',
+        'VIDEOOPS_USER_DIGITAL_HUMAN_INDEX_TTS2_BASIC_PASSWORD',
+        'DIGITAL_HUMAN_COMFY_UI_BASE_URL',
+        'DIGITAL_HUMAN_COMFY_UI_BASIC_USER',
+        'VIDEOOPS_USER_DIGITAL_HUMAN_COMFY_UI_BASIC_PASSWORD',
+        'DIGITAL_HUMAN_COMFY_UI_INSECURE_HTTP_ALLOWED_HOSTS_0'
+    )
+    foreach ($name in $requiredNames) {
+        if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name, 'Process'))) {
+            throw "GoldenPath 缺少必需的进程内配置：$name"
+        }
+    }
 }
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $apiRoot = Join-Path $repositoryRoot 'ai-video-api'
 $jarPath = Join-Path $apiRoot 'ai-video-user-api\target\ai-video-user-api.jar'
+$localConfigRoot = [System.IO.Path]::GetFullPath((Join-Path $repositoryRoot '.local\videoops-agent'))
+$ossEnabled = Resolve-FailClosedBooleanEnvironmentVariable -Name 'VIDEOOPS_AIVIDEO_OSS_ENABLED'
+if ($EnableGoldenPath) {
+    if ($ossEnabled -ne 'true') {
+        throw 'GoldenPath 只允许在 VIDEOOPS_AIVIDEO_OSS_ENABLED=true 时启动。'
+    }
+    Assert-GoldenPathEnvironment
+}
 
 if ([string]::IsNullOrWhiteSpace($LocalConfigPath)) {
-    $LocalConfigPath = Join-Path $repositoryRoot '.runtime\user-api.local.yml'
+    $LocalConfigPath = Join-Path $repositoryRoot '.local\videoops-agent\user-api.local.yml'
 }
 
 if (-not $SkipBuild) {
@@ -120,14 +191,20 @@ if (Test-NetConnection -ComputerName '127.0.0.1' -Port $Port -InformationLevel Q
 }
 
 $secretNames = @(
-    'SYS_SA_TOKEN_JWT_SECRET',
-    'APP_SA_TOKEN_JWT_SECRET',
-    'APP_SECURITY_TOKEN_WORKSPACE_KEY_SECRET'
+    'VIDEOOPS_USER_SA_TOKEN_JWT_SECRET_KEY',
+    'VIDEOOPS_USER_APP_SECURITY_TOKEN_JWT_SECRET',
+    'VIDEOOPS_USER_APP_SECURITY_TOKEN_WORKSPACE_KEY_SECRET'
 )
 $mediaRootName = 'AI_VIDEO_DH_MEDIA_ROOT'
 $previousMediaRoot = [Environment]::GetEnvironmentVariable($mediaRootName, 'Process')
-$runtimeSecretsPath = Join-Path $repositoryRoot '.local\local-runtime-secrets.json'
+$timelineWorkRootName = 'AIVIDEO_TIMELINE_WORK_ROOT'
+$previousTimelineWorkRoot = [Environment]::GetEnvironmentVariable($timelineWorkRootName, 'Process')
+$runtimeMediaRoot = Join-Path $repositoryRoot '.runtime\videoops-agent\digital-human-media'
+$runtimeTimelineWorkRoot = Join-Path $repositoryRoot '.runtime\videoops-agent\timeline-work'
+$runtimeUserApiRoot = Join-Path $repositoryRoot '.runtime\videoops-agent\user-api'
+$runtimeSecretsPath = Join-Path $repositoryRoot '.local\videoops-agent\local-runtime-secrets.json'
 $runtimeSecrets = Get-OrCreateLocalRuntimeSecrets -Names $secretNames -Path $runtimeSecretsPath
+New-Item -ItemType Directory -Path $runtimeUserApiRoot -Force | Out-Null
 
 $previousSecrets = @{}
 foreach ($secretName in $secretNames) {
@@ -135,19 +212,56 @@ foreach ($secretName in $secretNames) {
     Set-Item -Path "Env:$secretName" -Value $runtimeSecrets[$secretName]
 }
 
-if ([string]::IsNullOrWhiteSpace($previousMediaRoot)) {
-    Set-Item -Path "Env:$mediaRootName" -Value (Join-Path $repositoryRoot '.runtime\digital-human-media')
-}
+Set-Item -Path "Env:$mediaRootName" -Value $runtimeMediaRoot
+Set-Item -Path "Env:$timelineWorkRootName" -Value $runtimeTimelineWorkRoot
 
 Write-Host "正在启动创作端后端：http://localhost:$Port"
 Write-Host "本地安全密钥已持久化并复用：$runtimeSecretsPath"
 
-Push-Location $apiRoot
+Push-Location $runtimeUserApiRoot
 $applicationExitCode = 0
 try {
-    $applicationArguments = @("--server.port=$Port")
+    # These command-line values have higher Spring precedence than inherited
+    # environment variables and the optional additional-location file. Keep the
+    # local launcher fail-closed against the source project's runtime namespaces.
+    $applicationArguments = @(
+        '--spring.profiles.active=dev'
+        '--server.address=127.0.0.1'
+        "--server.port=$Port"
+        '--spring.datasource.dynamic.primary=master'
+        '--spring.datasource.dynamic.datasource.master.url=jdbc:mysql://127.0.0.1:3306/videoops_agent_dev?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true'
+        '--spring.datasource.dynamic.datasource.master.username=videoops_agent'
+        '--spring.data.redis.host=127.0.0.1'
+        '--spring.data.redis.port=6379'
+        '--spring.data.redis.database=14'
+        '--redisson.keyPrefix=videoops-agent:dev'
+        '--redisson.singleServerConfig.clientName=VideoOps-Agent-Dev'
+        '--sa-token.redis-key-prefix=videoops-agent:dev:'
+        "--digital-human.media-root=$runtimeMediaRoot"
+        "--aivideo.timeline.work-root=$runtimeTimelineWorkRoot"
+        "--aivideo.timeline.enabled=$($EnableGoldenPath.ToString().ToLowerInvariant())"
+        '--aivideo.whisper.enabled=false'
+        '--aivideo.runninghub.workflow-dispatch.enabled=false'
+        "--aivideo.oss.enabled=$ossEnabled"
+        '--aivideo.oss.config-key=videoops-agent-dev'
+        '--aivideo.oss.prefix=videoops-agent/dev'
+        '--questionnaire.deepseek.api-key='
+        '--spring.boot.admin.client.enabled=false'
+        '--snail-job.enabled=false'
+        '--snail-ai.enabled=false'
+        '--mail.enabled=false'
+        '--api-decrypt.enabled=false'
+    )
+    if (-not $EnableGoldenPath) {
+        $applicationArguments += '--digital-human.index-tts2.base-url='
+        $applicationArguments += '--digital-human.comfy-ui.base-url='
+    }
     if ([System.IO.File]::Exists($LocalConfigPath)) {
         $resolvedLocalConfig = (Resolve-Path -LiteralPath $LocalConfigPath).Path
+        $requiredPrefix = $localConfigRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+        if (-not $resolvedLocalConfig.StartsWith($requiredPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "本地运行配置必须位于当前仓库的 .local\videoops-agent 目录。"
+        }
         $localConfigUri = [Uri]::new($resolvedLocalConfig).AbsoluteUri
         $applicationArguments += "--spring.config.additional-location=$localConfigUri"
         Write-Host "已加载本地运行配置：$LocalConfigPath"
@@ -172,6 +286,12 @@ finally {
     }
     else {
         Set-Item -Path "Env:$mediaRootName" -Value $previousMediaRoot
+    }
+    if ($null -eq $previousTimelineWorkRoot) {
+        Remove-Item -Path "Env:$timelineWorkRootName" -ErrorAction SilentlyContinue
+    }
+    else {
+        Set-Item -Path "Env:$timelineWorkRootName" -Value $previousTimelineWorkRoot
     }
 }
 

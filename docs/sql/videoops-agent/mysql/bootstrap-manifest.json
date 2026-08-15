@@ -1,0 +1,177 @@
+{
+  "contractVersion": 1,
+  "target": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "schema": "videoops_agent_dev",
+    "user": "videoops_agent",
+    "charset": "utf8mb4",
+    "collation": "utf8mb4_0900_ai_ci"
+  },
+  "steps": [
+    {
+      "id": "001",
+      "kind": "schema",
+      "file": "docs/sql/videoops-agent/mysql/001_framework_schema.sql",
+      "sha256": "DC880C6AB659E3656A7B07596B771931F905A27DA62744BEDBED8DCBEA5D4DE9",
+      "purpose": "T1 运行与审计所需的最小 RuoYi 框架表",
+      "tables": [
+        "sys_menu",
+        "sys_role_menu",
+        "sys_oper_log",
+        "sys_dict_type",
+        "sys_dict_data",
+        "sys_oss_config"
+      ]
+    },
+    {
+      "id": "010",
+      "kind": "schema",
+      "file": "docs/sql/videoops-agent/mysql/010_identity_schema.sql",
+      "sha256": "8109EE7EFFF944A005E31FFF5F20AA381F4883B312D8C9A2E99FD09371E4020C",
+      "purpose": "创作端账号、客户端、角色权限、登录与安全审计结构",
+      "tables": [
+        "app_user",
+        "app_auth_client",
+        "app_social_identity",
+        "app_permission",
+        "app_role",
+        "app_role_permission",
+        "app_user_role",
+        "app_login_log",
+        "app_security_audit"
+      ]
+    },
+    {
+      "id": "020",
+      "kind": "schema",
+      "file": "docs/sql/videoops-agent/mysql/020_knowledge_schema.sql",
+      "sha256": "697D6A953856EFD0B413C6F0D2AA9F0F07B52F4C2459A31ECC2DECF683F17928",
+      "purpose": "问卷与文案生成所需的最小知识结构",
+      "tables": [
+        "av_knowledge_item",
+        "av_knowledge_version",
+        "av_knowledge_binding",
+        "av_video_type_rule"
+      ]
+    },
+    {
+      "id": "030",
+      "kind": "schema",
+      "file": "docs/sql/videoops-agent/mysql/030_asset_portrait_schema.sql",
+      "sha256": "74F0AB5E31D7CD0F09F800924E8D57BC6EB6F941BD887F44B8DBF6EC52DCDB6D",
+      "purpose": "人物与共享资产结构",
+      "tables": [
+        "av_asset",
+        "av_portrait"
+      ]
+    },
+    {
+      "id": "040",
+      "kind": "schema",
+      "file": "docs/sql/videoops-agent/mysql/040_digital_human_schema.sql",
+      "sha256": "9C8419683A9FFCF1DCB8B1AA904900B10DE387508EE9B921ACA59CC59567EB7D",
+      "purpose": "数字人生成任务及轮询租约结构",
+      "tables": [
+        "av_dh_generation_job"
+      ]
+    },
+    {
+      "id": "050",
+      "kind": "schema",
+      "file": "docs/sql/videoops-agent/mysql/050_quota_schema.sql",
+      "sha256": "A04BE58E445AEC05F8F5B69A9367FA47DF6BD232D465519474FB5896A1986DE6",
+      "purpose": "个人积分账户最终结构",
+      "tables": [
+        "av_quota_account"
+      ]
+    },
+    {
+      "id": "060",
+      "kind": "schema",
+      "file": "docs/sql/videoops-agent/mysql/060_voice_schema.sql",
+      "sha256": "8EED777EBDA16EA7D42775FDD50CC9977426E7C77ACD09B3AA6DB095F083A218",
+      "purpose": "原声音、转写时间轴与创作选择结构",
+      "tables": [
+        "av_voice"
+      ]
+    },
+    {
+      "id": "070",
+      "kind": "schema",
+      "file": "docs/sql/videoops-agent/mysql/070_script_schema.sql",
+      "sha256": "AA48CDD6F262806F78CE766144FFAAB28FC91AC62CB1446239A74B428C76E6A2",
+      "purpose": "用户文案与版本结构",
+      "tables": [
+        "av_user_script",
+        "av_script_version"
+      ]
+    },
+    {
+      "id": "080",
+      "kind": "schema",
+      "file": "docs/sql/videoops-agent/mysql/080_creation_timeline_schema.sql",
+      "sha256": "E396C78F3C5218D924A35F67601C85C3F6CDE7530F4230B1D6FDEC03A5B04A6E",
+      "purpose": "创作项目、Timeline、任务执行与尝试结构",
+      "tables": [
+        "av_creation_asset",
+        "av_creation_project",
+        "av_timeline_draft",
+        "av_timeline_version",
+        "av_timeline_asset_ref",
+        "av_timeline_write_receipt",
+        "av_ai_task",
+        "av_ai_task_execution",
+        "av_ai_task_attempt"
+      ]
+    },
+    {
+      "id": "090",
+      "kind": "schema",
+      "file": "docs/sql/videoops-agent/mysql/090_asset_file_compat.sql",
+      "sha256": "7A9117550721BB927D8F117EF5AF8D395890E4343BDC34A01E8D8E4471C5007C",
+      "purpose": "为当前黄金链 AssetFile 映射补充最小 file_id 兼容列",
+      "tables": [
+        "av_asset"
+      ]
+    },
+    {
+      "id": "900",
+      "kind": "seed",
+      "file": "docs/sql/videoops-agent/mysql/900_minimal_seed.sql",
+      "sha256": "7352FCFD8A9DF2DF58ABAFE9DA4AF58249327B8AF6D7274ABC2370FAF6CC9093",
+      "purpose": "纯合成 creator、客户端、黄金链权限、积分和最小知识",
+      "tables": [
+        "app_user",
+        "app_auth_client",
+        "app_role",
+        "app_permission",
+        "app_role_permission",
+        "app_user_role",
+        "av_quota_account",
+        "av_knowledge_item",
+        "av_knowledge_version",
+        "av_knowledge_binding",
+        "av_video_type_rule"
+      ]
+    }
+  ],
+  "seed": {
+    "allowedInsertTables": [
+      "app_user",
+      "app_auth_client",
+      "app_role",
+      "app_permission",
+      "app_role_permission",
+      "app_user_role",
+      "av_quota_account",
+      "av_knowledge_item",
+      "av_knowledge_version",
+      "av_knowledge_binding",
+      "av_video_type_rule"
+    ],
+    "requiredSessionVariables": [
+      "videoops_creator_password_hash"
+    ]
+  }
+}

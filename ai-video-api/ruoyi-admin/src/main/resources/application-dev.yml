@@ -85,8 +85,6 @@ mybatis-plus:
 
 --- # 数据源配置
 spring:
-  config:
-    import: optional:file:${AI_VIDEO_OSS_CONFIG:./ruoyi-admin/application-local.yml}
   datasource:
     type: com.zaxxer.hikari.HikariDataSource
     # 动态数据源文档 https://www.kancloud.cn/tracy5546/dynamic-datasource/content
@@ -102,8 +100,8 @@ spring:
           driverClassName: com.mysql.cj.jdbc.Driver
           # jdbc 所有参数配置参考 https://lionli.blog.csdn.net/article/details/122018562
           # rewriteBatchedStatements=true 批处理优化 大幅提升批量插入更新删除性能(对数据库有性能损耗 使用批量操作应考虑性能问题)
-          url: jdbc:mysql://localhost:3306/ai_video?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true
-          username: root
+          url: jdbc:mysql://localhost:3306/videoops_agent_dev?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true
+          username: videoops_agent
           password: ${VIDEOOPS_ADMIN_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_PASSWORD:}
 #        # 从库数据源
 #        slave:
@@ -155,7 +153,7 @@ spring.data:
     # 端口，默认为6379
     port: 6379
     # 数据库索引
-    database: 0
+    database: 14
     # redis 密码（本地 Memurai 无密码，如需密码取消注释下行）
     # password:
     # 连接超时时间
@@ -166,7 +164,7 @@ spring.data:
 # redisson 配置
 redisson:
   # redis key前缀
-  keyPrefix:
+  keyPrefix: "videoops-agent:dev"
   # 线程池数量
   threads: 4
   # Netty线程池数量
@@ -174,7 +172,7 @@ redisson:
   # 单节点配置
   singleServerConfig:
     # 客户端名称 不能用中文
-    clientName: RuoYi-Vue-Plus
+    clientName: VideoOps-Agent-Dev
     # 最小空闲连接数
     connectionMinimumIdleSize: 8
     # 连接池大小
@@ -330,14 +328,14 @@ spring:
     redis:
       host: 127.0.0.1
       port: 6379
-      database: 0
+      database: 14
       password: ${VIDEOOPS_ADMIN_SPRING_DATA_REDIS_PASSWORD:}
   datasource:
     dynamic:
       datasource:
         master:
-          url: jdbc:mysql://127.0.0.1:3306/ai_video?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true
-          username: root
+          url: jdbc:mysql://127.0.0.1:3306/videoops_agent_dev?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true
+          username: videoops_agent
           password: ${VIDEOOPS_ADMIN_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_PASSWORD:}
 
 aivideo:
@@ -345,25 +343,25 @@ aivideo:
     # 仅用于本地开发；生产环境继续通过 AI_VIDEO_RUNNINGHUB_MASTER_KEY 注入。
     master-key: ${VIDEOOPS_ADMIN_AIVIDEO_RUNNINGHUB_MASTER_KEY:}
     workflow-dispatch:
-      enabled: true
+      enabled: ${AIVIDEO_RUNNINGHUB_WORKFLOW_DISPATCH_ENABLED:false}
       worker-id: runninghub-workflow-worker
       concurrency-limit: 100
       poll-delay: PT0.1S
   oss:
-    enabled: true
-    config-key: aliyun
-    endpoint: oss-cn-shanghai.aliyuncs.com
+    enabled: ${VIDEOOPS_AIVIDEO_OSS_ENABLED:false}
+    config-key: videoops-agent-dev
+    endpoint: ${VIDEOOPS_ADMIN_AIVIDEO_OSS_ENDPOINT:}
     domain-url: ""
-    prefix: ai-video
+    prefix: videoops-agent/dev
     access-key: ${VIDEOOPS_ADMIN_AIVIDEO_OSS_ACCESS_KEY:}
     secret-key: ${VIDEOOPS_ADMIN_AIVIDEO_OSS_SECRET_KEY:}
-    bucket-name: qc-test-01
+    bucket-name: ${VIDEOOPS_ADMIN_AIVIDEO_OSS_BUCKET_NAME:}
     region: cn-shanghai
     https: true
     access-policy: "0"
 
 digital-human:
-  media-root: ${AI_VIDEO_DH_MEDIA_ROOT:${user.dir}/.runtime/digital-human-media}
+  media-root: ${AI_VIDEO_DH_MEDIA_ROOT:${user.dir}/.runtime/videoops-agent/digital-human-media}
   index-tts2:
     base-url: https://127.0.0.1:39000
     api-key: ${VIDEOOPS_ADMIN_DIGITAL_HUMAN_INDEX_TTS2_API_KEY:}
@@ -389,3 +387,4 @@ app:
 
 sa-token:
   jwt-secret-key: ${VIDEOOPS_ADMIN_SA_TOKEN_JWT_SECRET_KEY:}
+  redis-key-prefix: "videoops-agent:dev:"

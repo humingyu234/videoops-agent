@@ -33,7 +33,6 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.oss.client.OssClient;
 import org.dromara.common.oss.config.OssClientConfig;
 import org.dromara.common.oss.exception.S3StorageException;
-import org.dromara.common.oss.factory.OssFactory;
 import org.dromara.common.oss.model.GetObjectResult;
 import org.dromara.common.oss.model.Options;
 import org.junit.jupiter.api.Tag;
@@ -42,7 +41,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.dao.DuplicateKeyException;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
-import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import software.amazon.awssdk.core.ResponseInputStream;
@@ -67,10 +65,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
@@ -83,17 +81,20 @@ class CreationAssetServiceImplTest {
     @Mock
     private OssClient ossClient;
     @Mock
+    private ObjectProvider<OssClient> ossClientProvider;
+    @Mock
     private ResponseInputStream<GetObjectResponse> responseStream;
 
     @Test
     void springConstructorAllowsMissingDigitalHumanGenerationService() {
         ObjectProvider<IDigitalHumanGenerationService> digitalHumanServiceProvider = mock();
         ObjectProvider<ITimelineMediaRenderService> mediaRenderServiceProvider = mock();
+        ObjectProvider<OssClient> projectOssClientProvider = mock();
         when(digitalHumanServiceProvider.getIfAvailable()).thenReturn(null);
         when(mediaRenderServiceProvider.getIfAvailable()).thenReturn(null);
 
         CreationAssetServiceImpl service = new CreationAssetServiceImpl(assetMapper, null, null, null, null,
-            null, null, digitalHumanServiceProvider, mediaRenderServiceProvider);
+            null, null, digitalHumanServiceProvider, mediaRenderServiceProvider, projectOssClientProvider);
 
         assertThat(service).isNotNull();
         verify(digitalHumanServiceProvider).getIfAvailable();
@@ -102,36 +103,43 @@ class CreationAssetServiceImplTest {
 
     @Test
     void rangeHandleKeepsTheOssResponseStreamOpenUntilTheCallerClosesIt() throws IOException {
+        when(ossClientProvider.getIfAvailable()).thenReturn(ossClient);
         when(assetMapper.selectOne(any(Wrapper.class))).thenReturn(readyAsset(88L, 10L));
         when(ossClient.config()).thenReturn(OssClientConfig.builder().bucket("creation-bucket").build());
         when(ossClient.doCustomBufferedDownload(any(),
             org.mockito.ArgumentMatchers.eq(Duration.ofSeconds(30)))).thenReturn(responseStream);
         when(responseStream.read()).thenReturn(7);
 
-        try (MockedStatic<OssFactory> factory = mockStatic(OssFactory.class)) {
-            factory.when(OssFactory::instance).thenReturn(ossClient);
+        CreationMediaHandle handle = new CreationAssetServiceImpl(assetMapper, ossClientProvider)
+            .openOwnedMediaRange(7L, "88", "bytes=2-4");
 
-            CreationMediaHandle handle = new CreationAssetServiceImpl(assetMapper)
-                .openOwnedMediaRange(7L, "88", "bytes=2-4");
-
-            assertThat(handle.stream().read()).isEqualTo(7);
-            verifyRangeRequest("creation-bucket", "creation-assets/7/88.mp4", "bytes=2-4");
-            handle.close();
-            verify(responseStream).close();
-        }
+        assertThat(handle.stream().read()).isEqualTo(7);
+        verifyRangeRequest("creation-bucket", "creation-assets/7/88.mp4", "bytes=2-4");
+        handle.close();
+        verify(responseStream).close();
     }
 
     @Test
     void invalidRangeIsRejectedBeforeOpeningOss() {
         when(assetMapper.selectOne(any(Wrapper.class))).thenReturn(readyAsset(88L, 10L));
 
-        try (MockedStatic<OssFactory> factory = mockStatic(OssFactory.class)) {
-            assertThatThrownBy(() -> new CreationAssetServiceImpl(assetMapper)
-                .openOwnedMediaRange(7L, "88", "bytes=10-10"))
-                .isInstanceOf(ServiceException.class);
-            factory.verifyNoInteractions();
-        }
-        verify(ossClient, never()).doCustomBufferedDownload(any(), any());
+        assertThatThrownBy(() -> new CreationAssetServiceImpl(assetMapper, ossClientProvider)
+            .openOwnedMediaRange(7L, "88", "bytes=10-10"))
+            .isInstanceOf(ServiceException.class);
+        verifyNoInteractions(ossClientProvider, ossClient);
+    }
+
+    @Test
+    void ownedMediaReadFailsClosedWhenProjectOssIsUnavailable() {
+        when(assetMapper.selectOne(any(Wrapper.class))).thenReturn(readyAsset(88L, 10L));
+
+        assertThatThrownBy(() -> new CreationAssetServiceImpl(assetMapper, ossClientProvider)
+            .openOwnedMediaRange(7L, "88", "bytes=0-2"))
+            .isInstanceOf(ServiceException.class)
+            .hasMessage("VideoOps 对象存储未启用")
+            .extracting("code").isEqualTo(TimelineErrorCodes.TIMELINE_ASSET_INVALID);
+        verify(ossClientProvider).getIfAvailable();
+        verifyNoInteractions(ossClient);
     }
 
     @Test
@@ -146,6 +154,7 @@ class CreationAssetServiceImplTest {
 
     @Test
     void uploadReplaysTheSameIdempotencyRequestAndRejectsAChangedDigest() throws Exception {
+        when(ossClientProvider.getIfAvailable()).thenReturn(ossClient);
         byte[] firstContent = new byte[] {1, 2, 3};
         CreationAsset replay = readyAsset(88L, firstContent.length);
         replay.setAssetType(CreationAssetType.IMAGE.value());
@@ -162,23 +171,21 @@ class CreationAssetServiceImplTest {
                 return null;
             });
 
-        try (MockedStatic<OssFactory> factory = mockStatic(OssFactory.class)) {
-            factory.when(OssFactory::instance).thenReturn(ossClient);
-            CreationAssetServiceImpl service = new CreationAssetServiceImpl(assetMapper);
+        CreationAssetServiceImpl service = new CreationAssetServiceImpl(assetMapper, ossClientProvider);
 
-            assertThat(service.uploadOwned(7L, uploadCommand(), new ByteArrayInputStream(firstContent)).assetId())
-                .isEqualTo("88");
+        assertThat(service.uploadOwned(7L, uploadCommand(), new ByteArrayInputStream(firstContent)).assetId())
+            .isEqualTo("88");
 
-            assertThatThrownBy(() -> service.uploadOwned(7L, uploadCommand(),
-                new ByteArrayInputStream(new byte[] {9, 9, 9})))
-                .isInstanceOfSatisfying(ServiceException.class,
-                    exception -> assertThat(exception.getCode())
-                        .isEqualTo(TimelineErrorCodes.TIMELINE_IDEMPOTENCY_CONFLICT));
-        }
+        assertThatThrownBy(() -> service.uploadOwned(7L, uploadCommand(),
+            new ByteArrayInputStream(new byte[] {9, 9, 9})))
+            .isInstanceOfSatisfying(ServiceException.class,
+                exception -> assertThat(exception.getCode())
+                    .isEqualTo(TimelineErrorCodes.TIMELINE_IDEMPOTENCY_CONFLICT));
     }
 
     @Test
     void resolvesAReadableOwnedDigitalHumanSourceIntoStableCreationAssets() throws Exception {
+        when(ossClientProvider.getIfAvailable()).thenReturn(ossClient);
         AppUserMapper userMapper = mock(AppUserMapper.class);
         DigitalHumanGenerationJobMapper jobMapper = mock(DigitalHumanGenerationJobMapper.class);
         IDigitalHumanGenerationService digitalHumanService = mock(IDigitalHumanGenerationService.class);
@@ -209,26 +216,25 @@ class CreationAssetServiceImplTest {
         when(assetMapper.selectOne(any(Wrapper.class))).thenReturn(null);
         when(assetMapper.insert(any(CreationAsset.class))).thenReturn(1);
         when(ossClient.buildPathKey(any(), any())).thenAnswer(invocation ->
-            invocation.getArgument(0, String.class) + "/" + invocation.getArgument(1, String.class));
+            "videoops-agent/dev/" + invocation.getArgument(0, String.class) + "/"
+                + invocation.getArgument(1, String.class));
         when(ossClient.upload(any(), any(InputStream.class), org.mockito.ArgumentMatchers.anyLong()))
             .thenAnswer(invocation -> {
                 invocation.getArgument(1, InputStream.class).transferTo(OutputStream.nullOutputStream());
                 return null;
             });
 
-        try (MockedStatic<OssFactory> factory = mockStatic(OssFactory.class)) {
-            factory.when(OssFactory::instance).thenReturn(ossClient);
-            var result = new CreationAssetServiceImpl(assetMapper, null, null, null, null, userMapper,
-                jobMapper, digitalHumanService, mediaRenderService).resolveDigitalHumanSource(7L, "99");
+        var result = new CreationAssetServiceImpl(assetMapper, null, null, null, null, userMapper,
+            jobMapper, digitalHumanService, mediaRenderService, ossClientProvider)
+            .resolveDigitalHumanSource(7L, "99");
 
-            assertThat(result.sourceId()).isEqualTo("99");
-            assertThat(result.scriptTextSnapshot()).isEqualTo("server-owned script");
-            assertThat(result.durationMs()).isEqualTo(1_000L);
-            assertThat(result.width()).isEqualTo(1280);
-            assertThat(result.height()).isEqualTo(720);
-            assertThat(result.frameRate()).isEqualTo(30);
-            assertThat(result.primaryAudioAssetId()).isNotBlank();
-        }
+        assertThat(result.sourceId()).isEqualTo("99");
+        assertThat(result.scriptTextSnapshot()).isEqualTo("server-owned script");
+        assertThat(result.durationMs()).isEqualTo(1_000L);
+        assertThat(result.width()).isEqualTo(1280);
+        assertThat(result.height()).isEqualTo(720);
+        assertThat(result.frameRate()).isEqualTo(30);
+        assertThat(result.primaryAudioAssetId()).isNotBlank();
         ArgumentCaptor<CreationAsset> assets = ArgumentCaptor.forClass(CreationAsset.class);
         verify(assetMapper, times(2)).insert(assets.capture());
         assertThat(assets.getAllValues()).extracting(CreationAsset::getSourceRefId)
@@ -236,7 +242,9 @@ class CreationAssetServiceImplTest {
         assertThat(assets.getAllValues()).extracting(CreationAsset::getUsageOrigin)
             .containsOnly(CreationAssetUsageOrigin.DIGITAL_HUMAN_OUTPUT.value());
         assertThat(assets.getAllValues()).extracting(CreationAsset::getStorageKey)
-            .allSatisfy(key -> assertThat(key).doesNotContain("private-key"));
+            .allSatisfy(key -> assertThat(key)
+                .startsWith("videoops-agent/dev/creation-digital-human/")
+                .doesNotContain("private-key"));
     }
 
     @Test
@@ -270,7 +278,7 @@ class CreationAssetServiceImplTest {
         verify(assetMapper).insert(asset.capture());
         assertThat(result.status()).isEqualTo(CreationAssetStatus.PENDING);
         assertThat(asset.getValue().getStorageKey())
-            .isEqualTo("timeline-renders/7/99/44/" + "a".repeat(64) + ".mp4");
+            .isEqualTo("videoops-agent/dev/timeline-renders/7/99/44/" + "a".repeat(64) + ".mp4");
         assertThat(asset.getValue().getOwnerUserId()).isEqualTo(7L);
         assertThat(asset.getValue().getSourceRefId()).isEqualTo(99L);
         assertThat(asset.getValue().getUsageOrigin())
@@ -280,6 +288,7 @@ class CreationAssetServiceImplTest {
 
     @Test
     void storesPendingRenderOutputAsReadyOnlyAfterTheStreamWasConsumed() throws Exception {
+        when(ossClientProvider.getIfAvailable()).thenReturn(ossClient);
         byte[] content = new byte[] {1, 2, 3};
         CreationAsset pending = pendingRenderAsset(88L, 99L);
         TimelineRenderOutputHandle output = org.mockito.Mockito.mock(TimelineRenderOutputHandle.class);
@@ -296,25 +305,25 @@ class CreationAssetServiceImplTest {
                 return null;
             });
 
-        try (MockedStatic<OssFactory> factory = mockStatic(OssFactory.class)) {
-            factory.when(OssFactory::instance).thenReturn(ossClient);
+        var result = new CreationAssetServiceImpl(assetMapper, ossClientProvider)
+            .storePendingRenderContent(7L, "88", output);
 
-            var result = new CreationAssetServiceImpl(assetMapper).storePendingRenderContent(7L, "88", output);
-
-            assertThat(result.assetId()).isEqualTo("88");
-            assertThat(result.sha256()).isEqualTo(HexFormat.of().formatHex(
-                MessageDigest.getInstance("SHA-256").digest(content)));
-        }
+        assertThat(result.assetId()).isEqualTo("88");
+        assertThat(result.sha256()).isEqualTo(HexFormat.of().formatHex(
+            MessageDigest.getInstance("SHA-256").digest(content)));
         ArgumentCaptor<CreationAsset> saved = ArgumentCaptor.forClass(CreationAsset.class);
         verify(assetMapper).updateById(saved.capture());
         assertThat(saved.getValue().getAssetStatus()).isEqualTo(CreationAssetStatus.READY.value());
         assertThat(saved.getValue().getSizeBytes()).isEqualTo(3L);
+        verify(ossClient).upload(org.mockito.ArgumentMatchers.eq(pending.getStorageKey()),
+            any(InputStream.class), org.mockito.ArgumentMatchers.eq(3L), any(Options.class));
         verify(output).close();
     }
 
     @Test
     @SuppressWarnings("unchecked")
     void rejectsRecoveryOutputWithADifferentDigestWithoutOverwritingTheImmutableObject() throws Exception {
+        when(ossClientProvider.getIfAvailable()).thenReturn(ossClient);
         byte[] existingContent = {1, 2, 3};
         byte[] retryContent = {4, 5, 6};
         String retryDigest = HexFormat.of().formatHex(
@@ -340,15 +349,13 @@ class CreationAssetServiceImplTest {
                 return transformer.apply(result, new ByteArrayInputStream(existingContent));
             });
 
-        try (MockedStatic<OssFactory> factory = mockStatic(OssFactory.class)) {
-            factory.when(OssFactory::instance).thenReturn(ossClient);
-            assertThatThrownBy(() -> new CreationAssetServiceImpl(assetMapper)
-                .storePendingRenderContent(7L, "88", output)).isInstanceOf(ServiceException.class);
-        }
+        assertThatThrownBy(() -> new CreationAssetServiceImpl(assetMapper, ossClientProvider)
+            .storePendingRenderContent(7L, "88", output)).isInstanceOf(ServiceException.class);
 
         verify(ossClient).download(any(),
             org.mockito.ArgumentMatchers.<BiFunction<GetObjectResult, InputStream, Boolean>>any());
-        verify(ossClient).upload(any(), any(InputStream.class), org.mockito.ArgumentMatchers.eq(3L),
+        verify(ossClient).upload(org.mockito.ArgumentMatchers.eq(pending.getStorageKey()),
+            any(InputStream.class), org.mockito.ArgumentMatchers.eq(3L),
             org.mockito.ArgumentMatchers.argThat(options -> "*".equals(options.getIfNoneMatch())));
         verify(assetMapper, never()).updateById(any(CreationAsset.class));
     }
@@ -366,7 +373,7 @@ class CreationAssetServiceImplTest {
         verify(assetMapper).updateById(saved.capture());
         assertThat(saved.getValue().getAssetStatus()).isEqualTo(CreationAssetStatus.FAILED.value());
         assertThat(saved.getValue().getStorageKey())
-            .isEqualTo("timeline-renders/7/99/44/" + "a".repeat(64) + ".mp4");
+            .isEqualTo("videoops-agent/dev/timeline-renders/7/99/44/" + "a".repeat(64) + ".mp4");
     }
 
     @Test
@@ -422,7 +429,7 @@ class CreationAssetServiceImplTest {
         asset.setUsageOrigin(CreationAssetUsageOrigin.TIMELINE_RENDER_OUTPUT.value());
         asset.setSourceRefId(taskId);
         asset.setAssetStatus(CreationAssetStatus.PENDING.value());
-        asset.setStorageKey("timeline-renders/7/99/44/" + "a".repeat(64) + ".mp4");
+        asset.setStorageKey("videoops-agent/dev/timeline-renders/7/99/44/" + "a".repeat(64) + ".mp4");
         asset.setSha256("0".repeat(64));
         return asset;
     }

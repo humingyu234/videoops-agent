@@ -9,6 +9,8 @@ const queuedTask = {
   taskType: 'timeline_render',
   resourceType: 'creation_project',
   resourceId: '90071992547409931',
+  projectId: '90071992547409931',
+  draftRevision: '1',
   inputVersionId: '90071992547409936',
   status: 'queued',
   stage: 'queued',
@@ -16,6 +18,7 @@ const queuedTask = {
   canCancel: true,
   canRetry: false,
   createdAt: '2026-08-08T08:31:00+08:00',
+  updatedAt: '2026-08-08T08:31:01+08:00',
 };
 
 describe('unified task wire adapter', () => {
@@ -37,6 +40,20 @@ describe('unified task wire adapter', () => {
     expect('retryable' in task).toBe(false);
     expect('safeMessage' in task).toBe(false);
     expect('resultPayload' in task).toBe(false);
+  });
+
+  it('accepts the current AiTaskVo project context fields', () => {
+    expect(parseTaskDetailWire({
+      ...queuedTask,
+      result: null,
+      resultAssetId: null,
+      errorCode: null,
+      errorSummary: null,
+    })).toMatchObject({
+      taskId: queuedTask.taskId,
+      resourceId: queuedTask.resourceId,
+      status: 'queued',
+    });
   });
 
   it('rejects backend-internal task fields instead of accepting a second wire shape', () => {

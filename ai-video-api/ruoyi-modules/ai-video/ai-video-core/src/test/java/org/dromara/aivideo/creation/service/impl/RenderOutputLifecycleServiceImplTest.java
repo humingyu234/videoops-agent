@@ -22,11 +22,12 @@ import org.dromara.aivideo.task.enums.AiTaskType;
 import org.dromara.aivideo.task.mapper.AiTaskAttemptMapper;
 import org.dromara.aivideo.task.mapper.AiTaskExecutionMapper;
 import org.dromara.aivideo.task.mapper.AiTaskMapper;
+import org.dromara.aivideo.timeline.constant.TimelineErrorCodes;
 import org.dromara.aivideo.timeline.dto.TimelineRenderResultDTO;
 import org.dromara.aivideo.timeline.service.TimelineRenderOutputHandle;
+import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.oss.client.OssClient;
 import org.dromara.common.oss.exception.S3StorageException;
-import org.dromara.common.oss.factory.OssFactory;
 import org.dromara.common.oss.model.GetObjectResult;
 import org.dromara.common.oss.model.Options;
 import org.junit.jupiter.api.Tag;
@@ -35,9 +36,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.mockito.Mock;
-import org.mockito.MockedStatic;
 import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -50,11 +51,12 @@ import java.util.Map;
 import java.util.function.BiFunction;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -76,6 +78,8 @@ class RenderOutputLifecycleServiceImplTest {
     @Mock
     private OssClient ossClient;
     @Mock
+    private ObjectProvider<OssClient> ossClientProvider;
+    @Mock
     private TimelineRenderOutputHandle output;
 
     @BeforeAll
@@ -89,6 +93,7 @@ class RenderOutputLifecycleServiceImplTest {
 
     @Test
     void uploadsOutsideTheFinalCasThenMakesAssetExecutionTaskAndProjectReadyTogether() throws Exception {
+        when(ossClientProvider.getIfAvailable()).thenReturn(ossClient);
         byte[] bytes = {1, 2, 3};
         String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
         AiTask task = task();
@@ -111,14 +116,10 @@ class RenderOutputLifecycleServiceImplTest {
             return null;
         });
 
-        try (MockedStatic<OssFactory> factory = mockStatic(OssFactory.class)) {
-            factory.when(OssFactory::instance).thenReturn(ossClient);
+        boolean completed = service().storeAndComplete(lease(), pending(), output,
+            Instant.parse("2026-08-08T00:00:00Z"));
 
-            boolean completed = service().storeAndComplete(lease(), pending(), output,
-                Instant.parse("2026-08-08T00:00:00Z"));
-
-            assertThat(completed).isTrue();
-        }
+        assertThat(completed).isTrue();
 
         verify(ossClient).upload(any(), any(InputStream.class), anyLong(), any(Options.class));
         verify(output).close();
@@ -138,6 +139,7 @@ class RenderOutputLifecycleServiceImplTest {
     @Test
     @SuppressWarnings("unchecked")
     void reusesTheExistingImmutableObjectWhenRecoveryProducesTheSameDigest() throws Exception {
+        when(ossClientProvider.getIfAvailable()).thenReturn(ossClient);
         byte[] bytes = {1, 2, 3};
         String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
         when(taskMapper.selectOne(any(Wrapper.class))).thenReturn(task());
@@ -166,12 +168,8 @@ class RenderOutputLifecycleServiceImplTest {
                 return transformer.apply(result, new ByteArrayInputStream(bytes));
             });
 
-        try (MockedStatic<OssFactory> factory = mockStatic(OssFactory.class)) {
-            factory.when(OssFactory::instance).thenReturn(ossClient);
-
-            assertThat(service().storeAndComplete(lease(), pending(), output,
-                Instant.parse("2026-08-08T00:00:00Z"))).isTrue();
-        }
+        assertThat(service().storeAndComplete(lease(), pending(), output,
+            Instant.parse("2026-08-08T00:00:00Z"))).isTrue();
 
         verify(ossClient).upload(any(), any(InputStream.class), anyLong(),
             org.mockito.ArgumentMatchers.argThat(options -> "*".equals(options.getIfNoneMatch())));
@@ -206,7 +204,34 @@ class RenderOutputLifecycleServiceImplTest {
     }
 
     @Test
+    void liveRenderFailsClosedBeforeUploadOrFinalCasWhenProjectOssIsUnavailable() throws Exception {
+        byte[] bytes = {1, 2, 3};
+        String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        when(taskMapper.selectOne(any(Wrapper.class))).thenReturn(task());
+        when(executionMapper.selectOne(any(Wrapper.class))).thenReturn(execution());
+        when(assetMapper.selectOne(any(Wrapper.class))).thenReturn(pendingAsset());
+        when(output.metadata()).thenReturn(new TimelineRenderResultDTO("result.mp4", "video/mp4", digest,
+            bytes.length, 1_000L, 1080, 1920, 30));
+        when(output.stream()).thenReturn(new ByteArrayInputStream(bytes));
+
+        assertThatThrownBy(() -> service().storeAndComplete(lease(), pending(), output,
+            Instant.parse("2026-08-08T00:00:00Z")))
+            .isInstanceOf(ServiceException.class)
+            .hasMessage("VideoOps 对象存储未启用")
+            .extracting("code").isEqualTo(TimelineErrorCodes.TIMELINE_RENDER_UNAVAILABLE);
+
+        verify(ossClientProvider).getIfAvailable();
+        verifyNoInteractions(ossClient);
+        verify(assetMapper, never()).update(any(CreationAsset.class), any(LambdaUpdateWrapper.class));
+        verify(executionMapper, never()).update(any(AiTaskExecution.class), any(LambdaUpdateWrapper.class));
+        verify(taskMapper, never()).update(any(AiTask.class), any(LambdaUpdateWrapper.class));
+        verify(projectMapper, never()).update(any(CreationProject.class), any(LambdaUpdateWrapper.class));
+        verify(output).close();
+    }
+
+    @Test
     void finalizationRechecksTheLeaseAfterTheObjectUploadCompletes() throws Exception {
+        when(ossClientProvider.getIfAvailable()).thenReturn(ossClient);
         byte[] bytes = {1, 2, 3};
         String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
         AiTask task = task();
@@ -225,9 +250,8 @@ class RenderOutputLifecycleServiceImplTest {
             return null;
         });
 
-        try (MockedStatic<OssFactory> factory = mockStatic(OssFactory.class);
-             MockedStatic<Instant> clock = mockStatic(Instant.class, org.mockito.Mockito.CALLS_REAL_METHODS)) {
-            factory.when(OssFactory::instance).thenReturn(ossClient);
+        try (org.mockito.MockedStatic<Instant> clock = org.mockito.Mockito.mockStatic(
+            Instant.class, org.mockito.Mockito.CALLS_REAL_METHODS)) {
             clock.when(Instant::now).thenReturn(afterUpload);
 
             boolean completed = service().storeAndComplete(lease(), pending(), output, beforeUpload);
@@ -245,7 +269,7 @@ class RenderOutputLifecycleServiceImplTest {
 
     private IRenderOutputLifecycleService service() {
         return new RenderOutputLifecycleServiceImpl(assetService, assetMapper, projectMapper, taskMapper,
-            executionMapper, attemptMapper);
+            executionMapper, attemptMapper, ossClientProvider);
     }
 
     private AiTaskLeaseDTO lease() {
@@ -304,7 +328,7 @@ class RenderOutputLifecycleServiceImplTest {
         asset.setUsageOrigin("timeline_render_output");
         asset.setSourceRefId(701L);
         asset.setAssetStatus("pending");
-        asset.setStorageKey("timeline-renders/7/701/601/" + "a".repeat(64) + ".mp4");
+        asset.setStorageKey("videoops-agent/dev/timeline-renders/7/701/601/" + "a".repeat(64) + ".mp4");
         asset.setSha256("0".repeat(64));
         asset.setSizeBytes(0L);
         asset.setActorType("app_user");

@@ -31,16 +31,21 @@ public final class ComfyUiClient implements IDigitalHumanVideoService {
     private static final Pattern PROMPT_ID = Pattern.compile("[A-Za-z0-9_-]{1,128}");
     private static final Pattern WORKFLOW_ID = Pattern.compile("[A-Fa-f0-9-]{36}");
     private static final Pattern NODE_ID = Pattern.compile("[0-9]{1,20}");
-    private static final String UPLOAD_SUBFOLDER = "digital-human";
     static final int MAX_JSON_RESPONSE_BYTES = 1024 * 1024;
     static final int MAX_VIDEO_RESPONSE_BYTES = 128 * 1024 * 1024;
 
     private final DigitalHumanProviderProperties.ComfyUi properties;
+    private final String uploadSubfolder;
     private final HttpClient httpClient;
     private final JsonMapper jsonMapper = JsonMapper.builder().build();
 
     public ComfyUiClient(DigitalHumanProviderProperties.ComfyUi properties) {
         this.properties = Objects.requireNonNull(properties);
+        String configuredUploadSubfolder = properties.getUploadSubfolder();
+        if (!DigitalHumanProviderProperties.ComfyUi.REQUIRED_UPLOAD_SUBFOLDER.equals(configuredUploadSubfolder)) {
+            throw new ServiceException("ComfyUI 上传目录配置无效");
+        }
+        this.uploadSubfolder = configuredUploadSubfolder;
         this.httpClient = DigitalHumanHttpSupport.client(null, properties.isInsecureSkipTlsVerify());
     }
 
@@ -119,7 +124,7 @@ public final class ComfyUiClient implements IDigitalHumanVideoService {
         String fileName = "digital-human-" + role + '-' + UUID.randomUUID().toString().replace("-", "") + extension;
         DigitalHumanHttpSupport.MultipartBody body = DigitalHumanHttpSupport.multipart(List.of(
             DigitalHumanHttpSupport.file("image", fileName, mediaType, content),
-            DigitalHumanHttpSupport.text("subfolder", UPLOAD_SUBFOLDER),
+            DigitalHumanHttpSupport.text("subfolder", uploadSubfolder),
             DigitalHumanHttpSupport.text("type", "input"),
             DigitalHumanHttpSupport.text("overwrite", "false")));
         HttpRequest.Builder builder = HttpRequest.newBuilder()
@@ -140,7 +145,7 @@ public final class ComfyUiClient implements IDigitalHumanVideoService {
             String subfolder = value.path("subfolder").asString("");
             String type = value.path("type").asString("");
             if (name.isBlank() || name.contains("/") || name.contains("\\") || name.contains("..")
-                || !UPLOAD_SUBFOLDER.equals(subfolder) || !"input".equals(type)) {
+                || !uploadSubfolder.equals(subfolder) || !"input".equals(type)) {
                 throw new ServiceException("上传 ComfyUI 输入失败");
             }
             return new UploadedFile(name, subfolder);
