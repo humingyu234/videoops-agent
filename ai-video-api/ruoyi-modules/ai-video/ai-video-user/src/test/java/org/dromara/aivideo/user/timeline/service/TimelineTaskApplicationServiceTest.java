@@ -150,7 +150,7 @@ class TimelineTaskApplicationServiceTest {
     }
 
     private AiTaskDTO task() {
-        return new AiTaskDTO("701", "timeline_image_prompt_generate", "queued", "queued", "creation_project",
+        return new AiTaskDTO("701", "timeline_render", "queued", "queued", "creation_project",
             "88", "88", "3", null, null, null, null, "2026-08-08T00:00:00Z", "2026-08-08T00:00:00Z", null,
             0, true, false);
     }

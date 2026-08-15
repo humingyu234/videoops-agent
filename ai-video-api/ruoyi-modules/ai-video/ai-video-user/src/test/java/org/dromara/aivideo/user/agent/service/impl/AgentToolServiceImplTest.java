@@ -43,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -130,13 +131,13 @@ class AgentToolServiceImplTest {
     }
 
     @Test
-    void returnsOwnedReadyLatestOutputAndPersistedTechnicalFacts() {
+    void returnsOwnedReadyTaskOutputAfterProjectLatestHasAdvanced() {
         AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
         AiTaskAccessScopeDTO scope = new AiTaskAccessScopeDTO(2001L, 1001L, "workspace-key");
         when(taskService.getOwned(scope, "801")).thenReturn(renderTask("success", "901"));
-        when(projectService.getLatestOutputOwned(1001L, "701"))
-            .thenReturn(new CreationOutputDTO("701", "901", "801", Instant.EPOCH));
-        when(assetService.getOwned(1001L, "901")).thenReturn(outputAsset());
+        lenient().when(projectService.getLatestOutputOwned(1001L, "701"))
+            .thenReturn(new CreationOutputDTO("701", "902", "802", Instant.EPOCH));
+        when(assetService.getOwnedTimelineRenderOutput(1001L, "801", "901")).thenReturn(outputAsset());
 
         AgentToolDTOs.RenderStatusResult status = (AgentToolDTOs.RenderStatusResult) service().execute(principal,
             call("get_timeline_render_status", json("taskId", "801")));
@@ -153,6 +154,7 @@ class AgentToolServiceImplTest {
             assertThat(result.hasAudioStream()).isTrue();
             assertThat(result.downloadPath()).isEqualTo("/api/studio/creation-assets/901/content");
         });
+        verify(projectService, never()).getLatestOutputOwned(1001L, "701");
     }
 
     @Test
@@ -209,13 +211,58 @@ class AgentToolServiceImplTest {
         AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
         AiTaskAccessScopeDTO scope = new AiTaskAccessScopeDTO(2001L, 1001L, "workspace-key");
         when(taskService.getOwned(scope, "801")).thenReturn(renderTask("success", "901"));
-        when(projectService.getLatestOutputOwned(1001L, "701"))
-            .thenReturn(new CreationOutputDTO("701", "902", "801", Instant.EPOCH));
+        CreationAssetDTO unsafe = new CreationAssetDTO("901", "final.mp4", "video/mp4", "a".repeat(64),
+            CreationAssetType.VIDEO, CreationAssetUsageOrigin.TIMELINE_RENDER_OUTPUT, CreationAssetStatus.READY,
+            5_244_591L, 25_800L, 1080, 1920, false, true, Instant.EPOCH);
+        when(assetService.getOwnedTimelineRenderOutput(1001L, "801", "901")).thenReturn(unsafe);
 
         assertError(() -> service().execute(principal,
             call("get_timeline_render_status", json("taskId", "801"))), 46704);
 
-        verify(assetService, never()).getOwned(any(Long.class), any(String.class));
+        verifyNoInteractions(projectService);
+    }
+
+    @Test
+    void returnsPersistedStableFailureFactsWithoutInspectingOutputs() {
+        AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
+        DigitalHumanOwnerDTO owner = new DigitalHumanOwnerDTO(2001L, 1001L);
+        AiTaskAccessScopeDTO scope = new AiTaskAccessScopeDTO(2001L, 1001L, "workspace-key");
+        when(generationService.getJob(501L, owner)).thenReturn(failedVoiceJob());
+        when(generationService.getJob(601L, owner)).thenReturn(failedVideoJob());
+        when(taskService.getOwned(scope, "801")).thenReturn(failedRenderTask());
+
+        AgentToolDTOs.GenerationJobResult voice = (AgentToolDTOs.GenerationJobResult) service().execute(principal,
+            call("get_generation_status", json("jobId", "501")));
+        AgentToolDTOs.GenerationJobResult video = (AgentToolDTOs.GenerationJobResult) service().execute(principal,
+            call("get_generation_status", json("jobId", "601")));
+        AgentToolDTOs.RenderStatusResult render = (AgentToolDTOs.RenderStatusResult) service().execute(principal,
+            call("get_timeline_render_status", json("taskId", "801")));
+
+        assertThat(voice.errorCode()).isEqualTo("VOICE_PROVIDER_REJECTED");
+        assertThat(voice.safeMessage()).isEqualTo("声音生成失败，请稍后重试");
+        assertThat(video.errorCode()).isEqualTo("VIDEO_PROVIDER_FAILED");
+        assertThat(video.safeMessage()).isEqualTo("数字人视频生成失败，请稍后重试");
+        assertThat(render.errorCode()).isEqualTo("TIMELINE_RENDER_FAILED");
+        assertThat(render.safeMessage()).isEqualTo("视频渲染失败，请稍后重试");
+        verifyNoInteractions(projectService, assetService);
+    }
+
+    @Test
+    void rejectsFailedResultsWithoutCompleteStableFailureFacts() {
+        AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
+        DigitalHumanOwnerDTO owner = new DigitalHumanOwnerDTO(2001L, 1001L);
+        AiTaskAccessScopeDTO scope = new AiTaskAccessScopeDTO(2001L, 1001L, "workspace-key");
+        when(generationService.getJob(501L, owner)).thenReturn(new DigitalHumanJobDTO(
+            501L, null, DigitalHumanJobType.VOICE_GENERATE, DigitalHumanJobStatus.FAILED,
+            DigitalHumanJobStage.FAILED, 0, false, false, null, "声音生成失败，请稍后重试"));
+        when(taskService.getOwned(scope, "801")).thenReturn(failedRenderTask(null, "视频渲染失败，请稍后重试"));
+
+        assertError(() -> service().execute(principal,
+            call("get_generation_status", json("jobId", "501"))), 46704);
+        assertError(() -> service().execute(principal,
+            call("get_timeline_render_status", json("taskId", "801"))), 46704);
+
+        verifyNoInteractions(projectService, assetService);
     }
 
     @Test
@@ -272,6 +319,18 @@ class AgentToolServiceImplTest {
             DigitalHumanJobStatus.SUCCEEDED, DigitalHumanJobStage.COMPLETED, 100, true, true, null);
     }
 
+    private DigitalHumanJobDTO failedVoiceJob() {
+        return new DigitalHumanJobDTO(501L, null, DigitalHumanJobType.VOICE_GENERATE,
+            DigitalHumanJobStatus.FAILED, DigitalHumanJobStage.FAILED, 0, false, false,
+            "VOICE_PROVIDER_REJECTED", "声音生成失败，请稍后重试");
+    }
+
+    private DigitalHumanJobDTO failedVideoJob() {
+        return new DigitalHumanJobDTO(601L, 501L, DigitalHumanJobType.VIDEO_GENERATE,
+            DigitalHumanJobStatus.FAILED, DigitalHumanJobStage.FAILED, 0, true, false,
+            "VIDEO_PROVIDER_FAILED", "数字人视频生成失败，请稍后重试");
+    }
+
     private ICreationProjectService.CreationProjectDTO project() {
         return new ICreationProjectService.CreationProjectDTO("701", "T3 黄金链", "digital_human_job", "601",
             "711", "712", "editing", 1080, 1920, 30, 25_800L, 3L, "timeline-1", null,
@@ -282,6 +341,16 @@ class AgentToolServiceImplTest {
         return new AiTaskDTO("801", "timeline_render", status, status, "creation_project", "701", "701", "3",
             "811", resultAssetId, null, null, "2026-08-16T00:00:00Z", "2026-08-16T00:00:00Z", null,
             "success".equals(status) ? 100 : 0, !"success".equals(status), false);
+    }
+
+    private AiTaskDTO failedRenderTask() {
+        return failedRenderTask("TIMELINE_RENDER_FAILED", "视频渲染失败，请稍后重试");
+    }
+
+    private AiTaskDTO failedRenderTask(String errorCode, String safeMessage) {
+        return new AiTaskDTO("801", "timeline_render", "failed", "failed", "creation_project", "701", "701",
+            "3", "811", null, errorCode, safeMessage,
+            "2026-08-16T00:00:00Z", "2026-08-16T00:00:00Z", null, 80, false, true);
     }
 
     private CreationAssetDTO outputAsset() {

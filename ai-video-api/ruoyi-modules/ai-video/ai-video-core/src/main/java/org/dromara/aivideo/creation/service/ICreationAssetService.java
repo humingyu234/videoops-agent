@@ -22,6 +22,7 @@ public interface ICreationAssetService {
     CreationAssetDTO uploadOwned(long actorId, CreationAssetUploadDTO command, InputStream input);
     PageResult<CreationAssetDTO> pageOwned(long actorId, CreationAssetQueryDTO query, PageQuery pageQuery);
     CreationAssetDTO getOwned(long actorId, String assetId);
+    CreationAssetDTO getOwnedTimelineRenderOutput(long actorId, String taskId, String resultAssetId);
     CreationAssetResolveDTO resolveOwned(long actorId, String assetId, TimelineAssetUsageType usageType);
     CreationMediaHandle openOwnedMedia(long actorId, String assetId, TimelineAssetUsageType usageType);
     CreationMediaHandle openOwnedMediaRange(long actorId, String assetId, String singleRangeHeader);

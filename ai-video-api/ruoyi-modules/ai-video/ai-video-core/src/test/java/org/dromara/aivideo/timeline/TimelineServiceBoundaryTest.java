@@ -42,6 +42,7 @@ class TimelineServiceBoundaryTest {
             "deleteOwned(long,java.lang.String):void",
             "findCompensatablePending(java.time.Instant,int):java.util.List<org.dromara.aivideo.creation.dto.PendingRenderOutputDTO>",
             "getOwned(long,java.lang.String):org.dromara.aivideo.creation.dto.CreationAssetDTO",
+            "getOwnedTimelineRenderOutput(long,java.lang.String,java.lang.String):org.dromara.aivideo.creation.dto.CreationAssetDTO",
             "markPendingRenderFailed(long,org.dromara.aivideo.creation.dto.RenderOutputFailureDTO):void",
             "openOwnedMedia(long,java.lang.String,org.dromara.aivideo.timeline.enums.TimelineAssetUsageType):org.dromara.aivideo.creation.service.CreationMediaHandle",
             "openOwnedMediaRange(long,java.lang.String,java.lang.String):org.dromara.aivideo.creation.service.CreationMediaHandle",
@@ -74,6 +75,7 @@ class TimelineServiceBoundaryTest {
             "pageOwned(org.dromara.aivideo.task.dto.AiTaskAccessScopeDTO,org.dromara.aivideo.task.dto.AiTaskQueryDTO,org.dromara.common.mybatis.core.page.PageQuery):org.dromara.common.core.domain.PageResult<org.dromara.aivideo.task.dto.AiTaskSummaryDTO>",
             "recoverExpired(java.time.Instant,int):int",
             "releaseClaimedWorkflow(org.dromara.aivideo.task.dto.AiTaskLeaseDTO):boolean",
+            "replayTimelineRender(long,java.lang.String,java.lang.String,java.lang.String,java.lang.String):java.util.Optional<org.dromara.aivideo.task.dto.AiTaskDTO>",
             "requestCancellation(long,java.lang.String,java.lang.String):org.dromara.aivideo.task.dto.AiTaskDTO",
             "requestCancellation(org.dromara.aivideo.task.dto.AiTaskAccessScopeDTO,java.lang.String,java.lang.String):org.dromara.aivideo.task.dto.AiTaskDTO",
             "retryOwned(long,org.dromara.aivideo.task.dto.RetryAiTaskDTO):org.dromara.aivideo.task.dto.AiTaskDTO");

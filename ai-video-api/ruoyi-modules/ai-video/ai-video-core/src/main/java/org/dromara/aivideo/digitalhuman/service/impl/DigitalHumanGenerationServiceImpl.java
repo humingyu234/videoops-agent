@@ -791,7 +791,7 @@ public class DigitalHumanGenerationServiceImpl implements IDigitalHumanGeneratio
         return new DigitalHumanJobDTO(job.getId(), job.getParentJobId(), job.getJobType(), job.getStatus(),
             job.getStage(), job.getProgress(), Boolean.TRUE.equals(job.getVoiceConfirmed()),
             job.getStatus() == DigitalHumanJobStatus.SUCCEEDED && job.getOutputMediaKey() != null,
-            job.getErrorMessage());
+            job.getErrorCode(), job.getErrorMessage());
     }
 
     private String sha256(String domain, byte[]... values) {

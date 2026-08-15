@@ -44,7 +44,9 @@ public final class AgentToolDTOs {
         String stage,
         Integer progress,
         boolean voiceConfirmed,
-        boolean outputAvailable
+        boolean outputAvailable,
+        String errorCode,
+        String safeMessage
     ) implements Result {
     }
 
@@ -77,7 +79,9 @@ public final class AgentToolDTOs {
         String draftRevision,
         String resultAssetId,
         boolean cancellable,
-        boolean retryable
+        boolean retryable,
+        String errorCode,
+        String safeMessage
     ) implements Result {
     }
 

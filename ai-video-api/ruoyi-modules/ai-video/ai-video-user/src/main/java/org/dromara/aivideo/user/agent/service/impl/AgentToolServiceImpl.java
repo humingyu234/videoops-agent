@@ -4,12 +4,12 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.aivideo.agent.dto.AgentToolDTOs;
 import org.dromara.aivideo.agent.service.IAgentToolService;
 import org.dromara.aivideo.creation.dto.CreationAssetDTO;
-import org.dromara.aivideo.creation.dto.CreationOutputDTO;
 import org.dromara.aivideo.creation.enums.CreationAssetStatus;
 import org.dromara.aivideo.creation.enums.CreationAssetType;
 import org.dromara.aivideo.creation.enums.CreationAssetUsageOrigin;
 import org.dromara.aivideo.creation.service.ICreationAssetService;
 import org.dromara.aivideo.creation.service.ICreationProjectService;
+import org.dromara.aivideo.digitalhuman.domain.DigitalHumanJobStatus;
 import org.dromara.aivideo.digitalhuman.dto.CreateDigitalHumanVideoByResourceDTO;
 import org.dromara.aivideo.digitalhuman.dto.CreateVoiceGenerationByResourceDTO;
 import org.dromara.aivideo.digitalhuman.dto.DigitalHumanJobDTO;
@@ -163,12 +163,14 @@ public class AgentToolServiceImpl implements IAgentToolService {
         requireExactFields(node, Set.of("taskId"));
         AgentToolDTOs.TaskArgs args = new AgentToolDTOs.TaskArgs(positiveId(node, "taskId"));
         AiTaskDTO task = requireRenderTask(taskService.getOwned(context.taskScope(), args.taskId()));
+        requireStableFailure(task.status(), task.errorCode(), task.safeMessage());
         String resultAssetId = null;
         if (AiTaskStatus.SUCCESS.value().equals(task.status())) {
             resultAssetId = requireOutput(context.actorId(), task).asset().assetId();
         }
         return new AgentToolDTOs.RenderStatusResult(task.taskId(), task.status(), task.stage(), task.progress(),
-            task.projectId(), task.draftRevision(), resultAssetId, task.cancellable(), task.retryable());
+            task.projectId(), task.draftRevision(), resultAssetId, task.cancellable(), task.retryable(),
+            task.errorCode(), task.safeMessage());
     }
 
     private AgentToolDTOs.Result inspectOutput(AppPrincipalSnapshotDTO principal, JsonNode node) {
@@ -192,10 +194,14 @@ public class AgentToolServiceImpl implements IAgentToolService {
             || value.status() == null || value.stage() == null) {
             throw invalidResult();
         }
+        if (value.status() == DigitalHumanJobStatus.FAILED
+            && missingFailureFact(value.errorCode(), value.errorMessage())) {
+            throw invalidResult();
+        }
         return new AgentToolDTOs.GenerationJobResult(Long.toString(value.jobId()),
             value.parentJobId() == null ? null : Long.toString(value.parentJobId()), value.jobType().getValue(),
             value.status().getValue(), value.stage().getValue(), value.progress(), value.voiceConfirmed(),
-            value.outputAvailable());
+            value.outputAvailable(), value.errorCode(), value.errorMessage());
     }
 
     private AgentToolDTOs.RenderTaskResult renderTask(AiTaskDTO task) {
@@ -218,13 +224,8 @@ public class AgentToolServiceImpl implements IAgentToolService {
         if (task.resultAssetId() == null || task.resultAssetId().isBlank()) {
             throw invalidResult();
         }
-        CreationOutputDTO latest = projectService.getLatestOutputOwned(actorId, task.projectId());
-        if (latest == null || !Objects.equals(task.projectId(), latest.projectId())
-            || !Objects.equals(task.taskId(), latest.taskId())
-            || !Objects.equals(task.resultAssetId(), latest.outputAssetId())) {
-            throw invalidResult();
-        }
-        CreationAssetDTO asset = assetService.getOwned(actorId, latest.outputAssetId());
+        CreationAssetDTO asset = assetService.getOwnedTimelineRenderOutput(
+            actorId, task.taskId(), task.resultAssetId());
         if (asset == null || asset.status() != CreationAssetStatus.READY || asset.assetType() != CreationAssetType.VIDEO
             || asset.usageOrigin() != CreationAssetUsageOrigin.TIMELINE_RENDER_OUTPUT
             || asset.mimeType() == null || !asset.mimeType().startsWith("video/")
@@ -233,6 +234,16 @@ public class AgentToolServiceImpl implements IAgentToolService {
             throw invalidResult();
         }
         return new OutputFact(asset);
+    }
+
+    private void requireStableFailure(String status, String errorCode, String safeMessage) {
+        if (AiTaskStatus.FAILED.value().equals(status) && missingFailureFact(errorCode, safeMessage)) {
+            throw invalidResult();
+        }
+    }
+
+    private boolean missingFailureFact(String errorCode, String safeMessage) {
+        return errorCode == null || errorCode.isBlank() || safeMessage == null || safeMessage.isBlank();
     }
 
     private PrincipalContext requirePrincipal(AppPrincipalSnapshotDTO principal, String... permissions) {

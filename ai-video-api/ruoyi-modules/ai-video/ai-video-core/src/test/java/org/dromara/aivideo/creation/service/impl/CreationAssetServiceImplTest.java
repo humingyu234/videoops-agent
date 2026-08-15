@@ -1,7 +1,9 @@
 package org.dromara.aivideo.creation.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import org.apache.ibatis.annotations.Select;
 import org.dromara.aivideo.creation.domain.CreationAsset;
+import org.dromara.aivideo.creation.dto.CreationAssetDTO;
 import org.dromara.aivideo.creation.dto.CreationAssetUploadDTO;
 import org.dromara.aivideo.digitalhuman.domain.DigitalHumanGenerationJob;
 import org.dromara.aivideo.digitalhuman.domain.DigitalHumanJobStatus;
@@ -51,6 +53,7 @@ import java.io.IOException;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.Method;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.Duration;
@@ -127,6 +130,63 @@ class CreationAssetServiceImplTest {
             .openOwnedMediaRange(7L, "88", "bytes=10-10"))
             .isInstanceOf(ServiceException.class);
         verifyNoInteractions(ossClientProvider, ossClient);
+    }
+
+    @Test
+    void returnsOnlyTheOwnedReadyTimelineRenderOutputBoundToThePersistedTask() {
+        CreationAsset output = timelineRenderAsset(88L, 99L);
+        when(assetMapper.selectOwnedTimelineRenderOutput(7L, 99L, 88L)).thenReturn(output);
+
+        CreationAssetDTO result = new CreationAssetServiceImpl(assetMapper)
+            .getOwnedTimelineRenderOutput(7L, "99", "88");
+
+        assertThat(result.assetId()).isEqualTo("88");
+        assertThat(result.status()).isEqualTo(CreationAssetStatus.READY);
+        assertThat(result.assetType()).isEqualTo(CreationAssetType.VIDEO);
+        assertThat(result.usageOrigin()).isEqualTo(CreationAssetUsageOrigin.TIMELINE_RENDER_OUTPUT);
+        verify(assetMapper).selectOwnedTimelineRenderOutput(7L, 99L, 88L);
+    }
+
+    @Test
+    void rejectsMissingMismatchedCrossOwnerNonReadyAndWrongTypeRenderOutputs() {
+        CreationAsset crossOwner = timelineRenderAsset(88L, 99L);
+        crossOwner.setOwnerUserId(8L);
+        CreationAsset mismatchedTask = timelineRenderAsset(88L, 100L);
+        CreationAsset nonReady = timelineRenderAsset(88L, 99L);
+        nonReady.setAssetStatus(CreationAssetStatus.PENDING.value());
+        CreationAsset wrongType = timelineRenderAsset(88L, 99L);
+        wrongType.setAssetType(CreationAssetType.AUDIO.value());
+        when(assetMapper.selectOwnedTimelineRenderOutput(7L, 99L, 88L))
+            .thenReturn(null, crossOwner, mismatchedTask, nonReady, wrongType);
+        CreationAssetServiceImpl service = new CreationAssetServiceImpl(assetMapper);
+
+        for (int index = 0; index < 5; index++) {
+            assertThatThrownBy(() -> service.getOwnedTimelineRenderOutput(7L, "99", "88"))
+                .isInstanceOfSatisfying(ServiceException.class,
+                    exception -> assertThat(exception.getCode())
+                        .isEqualTo(TimelineErrorCodes.TIMELINE_ASSET_INVALID));
+        }
+
+        verify(assetMapper, times(5)).selectOwnedTimelineRenderOutput(7L, 99L, 88L);
+    }
+
+    @Test
+    void taskOutputMapperAtomicallyFreezesOwnershipAndAssociationWithoutProjectLatest() throws Exception {
+        Method method = CreationAssetMapper.class.getMethod("selectOwnedTimelineRenderOutput",
+            long.class, long.class, long.class);
+        String sql = String.join(" ", method.getAnnotation(Select.class).value())
+            .replaceAll("\\s+", " ");
+
+        assertThat(sql).contains(
+            "FROM av_creation_asset asset", "INNER JOIN av_ai_task task",
+            "task.task_id = #{taskId}", "task.owner_user_id = #{ownerUserId}",
+            "task.task_type = 'timeline_render'", "task.resource_type = 'creation_project'",
+            "task.task_status = 'success'", "task.result_asset_id = asset.asset_id",
+            "asset.asset_id = #{resultAssetId}", "asset.owner_user_id = #{ownerUserId}",
+            "asset.source_ref_id = #{taskId}", "asset.asset_status = 'ready'",
+            "asset.asset_type = 'video'", "asset.usage_origin = 'timeline_render_output'",
+            "asset.del_flag = '0'");
+        assertThat(sql).doesNotContain("av_creation_project", "current_output_asset_id");
     }
 
     @Test
@@ -431,6 +491,13 @@ class CreationAssetServiceImplTest {
         asset.setAssetStatus(CreationAssetStatus.PENDING.value());
         asset.setStorageKey("videoops-agent/dev/timeline-renders/7/99/44/" + "a".repeat(64) + ".mp4");
         asset.setSha256("0".repeat(64));
+        return asset;
+    }
+
+    private CreationAsset timelineRenderAsset(long assetId, long taskId) {
+        CreationAsset asset = readyAsset(assetId, 10L);
+        asset.setUsageOrigin(CreationAssetUsageOrigin.TIMELINE_RENDER_OUTPUT.value());
+        asset.setSourceRefId(taskId);
         return asset;
     }
 

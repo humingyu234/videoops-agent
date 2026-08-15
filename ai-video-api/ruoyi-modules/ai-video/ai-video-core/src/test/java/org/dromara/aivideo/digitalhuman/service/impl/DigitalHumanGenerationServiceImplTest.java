@@ -404,7 +404,8 @@ class DigitalHumanGenerationServiceImplTest {
             OWNER, "executor-key", "script", "reference.wav", "audio/wav", reference));
 
         assertThat(result.status()).isEqualTo(DigitalHumanJobStatus.FAILED);
-        assertThat(result.errorMessage()).contains("重试");
+        assertThat(result.errorCode()).isEqualTo("VOICE_DISPATCH_REJECTED");
+        assertThat(result.errorMessage()).isEqualTo("声音任务暂时无法执行，请重试");
         ArgumentCaptor<LambdaUpdateWrapper<DigitalHumanGenerationJob>> update = updateCaptor();
         verify(mapper).update(isNull(), update.capture());
         assertWhereStatus(update.getValue(), DigitalHumanJobStatus.QUEUED);
@@ -490,7 +491,8 @@ class DigitalHumanGenerationServiceImplTest {
         DigitalHumanJobDTO third = service.getJob(761L, OWNER);
 
         assertThat(third.status()).isEqualTo(DigitalHumanJobStatus.FAILED);
-        assertThat(third.errorMessage()).contains("重试");
+        assertThat(third.errorCode()).isEqualTo("VIDEO_POLL_FAILED");
+        assertThat(third.errorMessage()).isEqualTo("视频状态查询失败，请重试");
     }
 
     @Test

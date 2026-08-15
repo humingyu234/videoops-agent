@@ -13,6 +13,14 @@ public record DigitalHumanJobDTO(
     Integer progress,
     boolean voiceConfirmed,
     boolean outputAvailable,
+    String errorCode,
     String errorMessage
 ) {
+    public DigitalHumanJobDTO(Long jobId, Long parentJobId, DigitalHumanJobType jobType,
+                              DigitalHumanJobStatus status, DigitalHumanJobStage stage,
+                              Integer progress, boolean voiceConfirmed, boolean outputAvailable,
+                              String errorMessage) {
+        this(jobId, parentJobId, jobType, status, stage, progress, voiceConfirmed, outputAvailable,
+            null, errorMessage);
+    }
 }

@@ -243,6 +243,21 @@ public class CreationAssetServiceImpl implements ICreationAssetService {
     }
 
     @Override
+    public CreationAssetDTO getOwnedTimelineRenderOutput(long actorId, String taskId, String resultAssetId) {
+        if (actorId <= 0) {
+            throw assetInvalid("创作成品不可用");
+        }
+        long parsedTaskId = parsePositiveId(taskId);
+        long parsedResultAssetId = parsePositiveId(resultAssetId);
+        CreationAsset asset = assetMapper.selectOwnedTimelineRenderOutput(actorId, parsedTaskId,
+            parsedResultAssetId);
+        if (!isOwnedTimelineRenderOutput(asset, actorId, parsedTaskId, parsedResultAssetId)) {
+            throw assetInvalid("创作成品不可用");
+        }
+        return toDto(asset);
+    }
+
+    @Override
     public CreationAssetResolveDTO resolveOwned(long actorId, String assetId, TimelineAssetUsageType usageType) {
         CreationAsset asset = requireOwnedReady(actorId, assetId);
         requireCompatible(asset, usageType);
@@ -516,6 +531,18 @@ public class CreationAssetServiceImpl implements ICreationAssetService {
             throw new ServiceException("创作素材不可用", ASSET_NOT_AVAILABLE);
         }
         return asset;
+    }
+
+    private boolean isOwnedTimelineRenderOutput(CreationAsset asset, long actorId, long taskId,
+                                                long resultAssetId) {
+        return asset != null
+            && Objects.equals(asset.getAssetId(), resultAssetId)
+            && Objects.equals(asset.getOwnerUserId(), actorId)
+            && Objects.equals(asset.getSourceRefId(), taskId)
+            && CreationAssetStatus.READY.value().equals(asset.getAssetStatus())
+            && CreationAssetType.VIDEO.value().equals(asset.getAssetType())
+            && CreationAssetUsageOrigin.TIMELINE_RENDER_OUTPUT.value().equals(asset.getUsageOrigin())
+            && "0".equals(asset.getDelFlag());
     }
 
     private void requireCompatible(CreationAsset asset, TimelineAssetUsageType usageType) {
