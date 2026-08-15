@@ -366,3 +366,29 @@ property 拒绝，不能输出、默认补值或覆盖服务端派生值。promp
 - `AuditFillContext<Long>` 必须可嵌套，进入时压入当前创作端主体，退出时在 `finally` 恢复或清空。创作端请求过滤器只从已认证的 `AppLoginHelper` 打开上下文，禁止从请求 BO 读取主体。
 - `InjectionMetaObjectHandler` 遇到 `AppAuditRequired` 时只读取 `AuditFillContext<Long>`：创建写 `create_by/update_by`，更新写 `update_by`，`create_dept` 固定为空。上下文缺失、类型错误或主体无效必须 fail-closed，禁止回退 `LoginHelper`、系统用户或 `-1`。
 - Worker 的每个短数据库事务使用根任务冻结的 `actor_type=app_user` 与 `actor_id` 打开审计上下文；技术执行者只写入 `lease_owner`、attempt Worker 等技术字段，不得冒充运营端用户。无法取得或核对冻结主体时停止写入并 fail-closed。
+
+## T2 版本化交付契约与可恢复 AgentRun
+
+T2 只新增 Agent 控制面事实，不替代或复制 `av_ai_task*`、`av_dh_generation_job` 的执行事实，也不调用 Provider。三张表统一使用 `owner_user_id` 隔离当前 `app_user`；Service 的读取、唯一键仲裁和 CAS 写回必须带 owner，跨 owner 统一表现为不存在。三张表均继承 `BaseEntity`、实现 `AppAuditRequired`，不设置逻辑删除；数据库不建立物理外键、级联更新或级联删除。
+
+### 不可变契约版本
+
+- `av_delivery_brief_version` 以稳定 `brief_id` 聚合不可变版本。`version_no` 从 1 单调递增，后续版本必须指向同 owner 的 `parent_version_id`；首期只接受 `schema_version=delivery-brief-1` 与 `delivery_type=image_to_digital_human_video`。
+- `av_acceptance_profile_version` 以稳定 `acceptance_profile_id` 聚合不可变偏好版本，并精确引用一个同 owner 的 DeliveryBrief 版本。首期固定 `schema_version=acceptance-profile-1`、`policy_version=acceptance-policy-1`；JSON 只表达可追溯偏好，不产生未经校准的自动质量阈值。
+- 两类版本的 JSON 均由 Service 规范化后计算小写 SHA-256。调用方不得提交 owner、actor 或摘要。唯一键 `(owner_user_id,聚合ID,version_no)` 保证版本位置，`(owner_user_id,idempotency_key)` 保证意图幂等；相同 key 与相同请求摘要返回原版本，不同摘要 fail-closed。
+
+### AgentRun 状态、恢复与迟到结果
+
+`av_agent_run` 固定引用一个 Brief 版本和一个 Profile 版本；T2 当前创建时 `contract_revision=1`，不提供运行中切换契约入口。后续若增加切换能力，必须用 CAS 显式增加该修订号。状态只允许 `queued -> running -> waiting_external_task|completed|failed|cancelled`，以及恢复同一外部任务时 `waiting_external_task -> waiting_external_task` 并旋转租约 fence；终态不可逆。`completed` 必须保存候选素材、结果摘要和结果 JSON，`failed` 必须保存脱敏错误，非终态不得提前保存结果。
+
+领取运行以 `(owner_user_id,agent_run_id,row_version)` 做 CAS：只领取 `queued` 或租约已过期的 `running|waiting_external_task` 行，保持同一 `agent_run_id`，并增加 `lease_generation`、`row_version`，只保存随机 lease token 的小写 SHA-256。未过期租约不能被抢占；进程重启只能恢复同一 run，不能用新幂等键创建替代 run。
+
+等待既有任务时，保存 `waiting_task_source=digital_human_generation|ai_task`、任务 ID、当前 `waiting_contract_revision` 和下次恢复时间，不复制 Provider 原始状态；同时保留当前 lease owner、token 摘要和到期时间作为结果 fencing，只有恢复领取时才旋转代次和 token。进入等待前必须在同一 CAS 中确认任务属于当前 owner、类型正确且处于可等待状态；结果写回还必须原子确认任务已成功，并且候选 `av_creation_asset` 属于同一 owner、已 ready、未删除，来源与任务 ID 一致。任务结果写回必须同时匹配 owner、run、`row_version`、`lease_generation`、token 摘要、任务来源／ID及 `contract_revision`；旧租约、旧契约、错误任务、错误资产或终态写回影响 0 行，且不得继续任何副作用。`finishLease(completed)` 仅表示采用一份已经存在的 owned + ready 视频输出，不伪造外部任务因果；后续删除服务对已被 AgentRun 引用资产的生命周期保护不属于 T2。
+
+### 唯一约束与查询索引
+
+| 表 | 必须存在的唯一约束／查询索引（列顺序固定） |
+| --- | --- |
+| `av_delivery_brief_version` | UNIQUE `(owner_user_id,brief_id,version_no)`；UNIQUE `(owner_user_id,idempotency_key)`，前者同时支持版本历史查询 |
+| `av_acceptance_profile_version` | UNIQUE `(owner_user_id,acceptance_profile_id,version_no)`；UNIQUE `(owner_user_id,idempotency_key)`，前者同时支持版本历史查询 |
+| `av_agent_run` | UNIQUE `(owner_user_id,idempotency_key)`；INDEX `(owner_user_id,run_status,state_changed_at)`；调度 INDEX `(run_status,resume_after,lease_expires_at)`；等待任务 INDEX `(owner_user_id,waiting_task_source,waiting_task_id)`；契约 INDEX `(owner_user_id,delivery_brief_version_id,acceptance_profile_version_id)` |

@@ -6,14 +6,14 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 当前阶段 | T1：人工黄金链；T1.0～T1.9 已完成，当前提交作为本地 T1 checkpoint |
-| 当前详细计划 | `docs/superpowers/plans/2026-08-14-videoops-agent-t1-golden-path.md`（当前辅助 runbook） |
-| 状态 | `DONE` |
-| 风险等级 | `RED`：真实 Provider、文件/资产、异步任务、幂等和可能的付费调用 |
-| 当前核对源码 | `branch:main; T1 checkpoint: 本提交；base:e999b1f2ce1f3d62168c3668de22b0fa6f8f9159` |
-| 工作区 | checkpoint 输入为 `git status --porcelain=v1 -uall:60 paths（42 tracked + 18 untracked）`；60 项均已纳入本地 checkpoint，`.runtime/.local`、媒体、二进制和秘密均未进入 Git。`AGENTS.md` 是负责人此前独立授权的修改；T1.8 只在初始字幕最近边界及其现有测试中改善分段与可读性 |
-| 最近有效运行证据 | `T1-E15`：复用 T1.7 已生成的 voice/video 资产，只执行一次本地 Timeline/FFmpeg 重渲染，未新增 Provider 调用；新成品 25.8 秒、1080×1920、30 fps、H.264 + AAC，完整解码与音视频起止差门禁通过，8 段字幕使用黑色 3 px 描边。`T1-E16`：当前源码后端、前端、构建、Pester、数据库静态门禁、规范、秘密/媒体检查、运行状态对账和独立复核全部通过 |
-| 最后更新 | 2026-08-15（Asia/Shanghai） |
+| 当前阶段 | T2：版本化交付契约与可恢复 AgentRun 持久边界 |
+| 当前详细计划 | `docs/superpowers/plans/2026-08-15-videoops-agent-t2-agent-run-contract.md`（当前辅助 runbook） |
+| 状态 | `PAUSED` |
+| 风险等级 | `RED`：owner 隔离、持久状态、幂等、租约恢复和迟到结果 fencing |
+| 当前核对源码 | `branch:main; T2 checkpoint:本提交; T1 checkpoint:1fe6a92a23e6d8b4f8aa12552f09c1097498ba9e; base:e999b1f2ce1f3d62168c3668de22b0fa6f8f9159` |
+| 工作区 | T2 开工时 clean；checkpoint 输入为 19 个 status 路径：18 个冻结 T2 路径加负责人预期的根 `AGENTS.md` 规则更新；不含 UI、Provider、运行产物或现有任务模型改写 |
+| 最近有效运行证据 | `T2-E02`：当前源码真实 MySQL `AgentRunPersistenceIT` 新鲜 3/3、Service 单元 9/9、bootstrap validator/Pester 16/16、开发规范与 diff 门禁通过；随机测试表 0 残留，旧三张测试表保留，专用账号只能访问 `ai_video_test`，访问两个开发库均被 1044 拒绝。T2 checkpoint 已完成，等待独立验收 |
+| 最后更新 | 2026-08-16（Asia/Shanghai） |
 
 状态只使用 `NOT_STARTED`、`IN_PROGRESS`、`VERIFYING`、`BLOCKED`、`DONE`、`NEEDS_REVALIDATION`、`DEFERRED`、`PAUSED`。`BLOCKED` 仅表示当前范围内已经没有安全动作可继续；`PAUSED` 表示负责人要求在已完成切片后停止，不代表技术阻塞。
 
@@ -33,12 +33,22 @@
 | T1.8 成品与一致性验收 | `DONE` | `T1-E15`：新 project `2088580138567495681`、render task `2088580140291354626`、output asset `2088580141574811650` 因果一致。新 MP4 完整解码、9:16、有 H.264/AAC 双流，音视频起止差均为 0；黑场、冻结、静音检测均为 0。字幕改为 8 段并增加黑色 3 px 描边，人工观感改善；底片与声音复用 T1.7 资产，Provider job 总数仍为 2、无新 Provider 调用 | `outputs/latest` 与任务详情一致；MP4 可解码、9:16、有音轨和可见字幕；SHA-256、ffprobe、0.25 秒音视频不变量、人工检查和实际工作流身份均有证据 |
 | T1.9 证据、独立复核与收口 | `DONE` | `T1-E16`：当前源码后端 17 类 155/155 与 package、前端 8 文件 45/45 + lint/tsc/build、launcher Pester 12/12、bootstrap Pester 16/16、bootstrap validator、开发规范、staged diff/秘密/媒体门禁均通过；新库/DB14/namespace、旧库拒绝、DB0/旧 8080 与端口完成最终对账。独立审查结论为本机/试运行 checkpoint 可接受，未发现 P0/P1 | 每项记录 `PASS`、`FAIL` 或 `NOT_RUN`、源码状态、真实性标签、命令/任务/产物和剩余风险；非实施者确认因果链、无重复收费提交、模型声明和秘密脱敏后才可 `DONE` |
 
+## T2 步骤现场
+
+| 步骤 | 状态 | 当前证据或阻塞 | 完成信号 |
+| --- | --- | --- | --- |
+| T2.1 短 runbook 与范围冻结 | `DONE` | 当前 runbook 固定三表、core Service、迁移与两层边界测试；明确不做 UI、Planner、工具包装或任务重写 | 文件面、非目标和三个验收信号明确 |
+| T2.2 版本化 Brief/Profile | `DONE` | 不可变版本、owner 归属、规范 JSON 摘要与幂等回放已实现；单元边界通过 | 版本追加不覆盖旧行；跨 owner 拒绝；异摘要冲突 |
+| T2.3 AgentRun 状态与恢复 | `DONE` | 同一 run 的 queued/running/waiting 领取、租约代次、重启恢复与终态不可逆已由 Service 单元和真实 MySQL IT 共同验证 | 同一 run 可由新 Service 实例恢复；终态不可逆 |
+| T2.4 迟到结果隔离 | `DONE` | owner、row version、lease generation/token digest、task identity 与 contract revision 均进入 CAS；等待完成、失败和取消原子核对外部任务及候选资产事实。旧 token、旧 task、旧 contract revision、错误 owner/任务/资产与重复终态在真实 MySQL 中均影响 0 行 | 旧 token、旧 task、旧 contract revision 及错误任务/资产均影响 0 行 |
+| T2.5 迁移与边界验收 | `DONE` | manifest/validator、Pester 16/16、9/9 单元测试、当前源码真实 MySQL IT 3/3、开发规范、diff 与秘密门禁全绿；`ai_video_test` 非破坏性复用，随机测试表清零，专用账号只具该库六项权限 | manifest/validator、单元测试、真实 MySQL IT、规范与 diff 全绿 |
+
 ## 已知风险与前置缺口
 
 - Java 21.0.12 已安装，但当前基础环境未设置 `JAVA_HOME` 且 `java` 不在 PATH；单个 PowerShell 进程临时注入后验证可用，后续 Maven 命令必须显式复现该注入。
 - 本机 IndexTTS2 `39000` 与 ComfyUI `8189` 仍未监听；`T1-E14` 复用远端 company-dev-gpu 并由当前 Adapter 完成了唯一真实 voice/video 任务，因此无需把公司 GPU 服务重建到本机。私有地址和认证未进入仓库或证据。
 - `8080` 已确认是旧公司项目后端，本任务未停止也未调用它；`T1-E11` 已在其保持运行时证明 VideoOps 只连接新库/DB14。因未获停止旧服务授权，旧 8080 停止态没有动态复跑；独立 datasource、最小权限 1142 拒绝和运行连接归属证明当前应用不以旧实例为运行依赖。
-- 共享 `ai_video` 的 T1-E06 只保留为历史诊断证据，不能支持当前数据库完成声明。T1-E10 仅按负责人明确授权把旧 dev 管理员凭据在本机子进程内一次性用于新库 bootstrap；值未输出、复制或持久化，后续运行不依赖该凭据，也未对共享库执行 DDL/DML。旧仓字面量凭据仍须在公开发布前轮换或吊销。
+- 共享 `ai_video` 的 T1-E06 只保留为历史诊断证据，不能支持当前数据库完成声明。T1-E10 仅按负责人明确授权把旧 dev 管理员凭据在本机子进程内一次性用于新库 bootstrap，后续运行不依赖该身份，也未对共享库执行 DDL/DML；其生命周期由负责人管理，不构成本轮阻塞。
 - 独立 `videoops_agent_dev` 已由 manifest 冻结的 `001..090 → 900` 包从空库建立。`ry_vue.sql`、旧 25 份混合迁移和旧 2 MB 广种子只保留为来源审计，仍不得作为当前新库执行入口。
 - Redis DB 14 当前 `DBSIZE=1`，唯一项目 marker 属于 `videoops-agent:dev`、foreign=0，DB0 前后均为 2；DB 15保留给集成测试。源码审计表明 Redisson NameMapper + Sa-Token 双前缀可覆盖现有键写入，但 Pub/Sub 跨 DB，因此非空全局前缀仍是硬门禁。
 - `T1-E09` 只闭合当前 T1 dev 黄金链的最小 OSS 代码边界；`T1-E13` 真实验证人物/声音，`T1-E14` 又真实验证数字人登记与 Timeline 成品均经项目 JVM client 写入 `videoops-agent/dev/`。通用 RuoYi OSS 工厂、RunningHub 和管理端 CRUD 仍未迁移，不能把本次结论外推到未运行入口。
@@ -52,6 +62,8 @@
 - `T1-E14` 已从实际工作流冻结并记录 MultiTalk `Wan2_1-InfiniteTalk-Single_fp8_e4m3fn_scaled_KJ.safetensors`、主模型 `aniWan2114BFp8E4m3fn_i2v480pNew.safetensors` 与 LoRA `lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank16_bf16.safetensors`。该身份只绑定本次 workflow JSON SHA，不能外推为 Provider 全局版本。
 - 当前 `/studio` 轮询只走任务详情，已修复普通 Timeline 详情对 RunningHub `av_workflow_order` 表的无条件依赖并由真实 MySQL 请求验证；任务列表查询仍保留旧 workflow 依赖，因本次页面未经过而 `DEFERRED`。Web dev server 本次监听所有本机地址而非仅 loopback，也记为后续本地启动边界，不影响已完成的 18081 后端 loopback 约束。
 - T1.7 收工日志中的 `ECONNREFUSED` 发生在后端先于 Web 停止、页面仍执行既有轮询的窗口；当前轮询在任务终态会清理 timer，因此按收工顺序噪音处理，不扩张产品代码。后续固定先离开或停止 Web 并确认轮询结束，再停止 18081。
+- T2 本机 IT 非破坏性复用既有 `ai_video_test`：原 `av_ai_task`、`av_ai_task_execution`、`av_ai_task_attempt` 三表保持不变，测试只使用带随机后缀的六张临时业务表并在每例结束清理。新建的 `videoops_agent_t2_it` 仅有该 schema 的 `CREATE/DROP/SELECT/INSERT/UPDATE/DELETE`，凭据保存在 Git 忽略、当前用户 ACL 的 DPAPI 载体。负责人已明确接受此前管理秘密只进入私有任务工具输出的风险并决定无需轮换；该值未进入仓库、命令参数、日志或持久环境，本轮不再检查或输出。
+- T2 的 completed 记录只在写入瞬间原子确认候选资产为当前 owner 的 ready、未删除视频输出；后续资产删除入口尚未增加“已被 AgentRun 引用”保护，属于使用该终态资产前必须处理的后续生命周期边界，不能把当前候选引用描述为永久可用。
 
 ## 证据索引
 
@@ -76,10 +88,12 @@
 | T1-E14 | T1.4 + T1.6 + T1.7 真实 `/studio` 黄金链与最终 MP4 | 当前 dirty JAR、真实 Web/18081、新库/DB14、项目 OSS 与公司 GPU Provider；仅本次单次生成获授权 | `branch:main; commit:e999b1f2ce1f3d62168c3668de22b0fa6f8f9159; status paths:47; jar sha256:B6F17F9AA0AA85ED7E168FB79AA11B87F473A3F523FF04B1F5CC98747F1CD653; launcher sha256:AB9C74826BBEDA5EC46FAE317270BF8239AA2C0F3AAB443B2C9FEEE9D4614E91` | 真实浏览器 `/studio` 登录/素材选择/固定文案/voice/video/project/render/下载；任务与资产只读对账；ffprobe、音量检测和 3 处抽帧；Provider 9/9、存储 20/20、任务详情 19/19、前端 10/10、launcher Pester 12/12；user-api package；Redis/端口/进程收工快照；`git diff --check`、开发规范 | `PASS`：页面无 Mock 且不经过旧 8080；voice/video/render 各只 POST 一次并成功，任务、项目、三条 creation asset 与 output asset 因果链一致，所有存储 key 均在 `videoops-agent/dev/`。实际工作流 UUID/JSON SHA 与模型节点已冻结；Comfy 上传子目录为项目 namespace。下载文件 `videoops-t1-golden-2088539141703839746.mp4` 为 9,544,664 bytes，SHA-256 `67D6819F5A2F693516A6C239DF55EB3D9223E3491B9C181CF84EB25A4842BF09`，25.8 秒、1080×1920、30 fps、H.264 + AAC，音轨非静音，3 处抽帧均见烧录中文字幕。DB14 收工回到 marker-only、DB0=2；项目账号访问 `ai_video` 仍被 1044 拒绝；旧 8080 PID/启动时间/命令摘要不变；18081/8002 已释放，本机 39000/8189 未启动，敏感环境残留为 0。`NOT_RUN`：RunningHub、DeepSeek、T1.8 正式质量打分/0.25 秒一致性、T1.9 独立收口；未提交代码 |
 | T1-E15 | T1.8 字幕可读性修复与成品一致性验收 | 当前 dirty JAR、本机 Timeline/FFmpeg、新库/DB14 与项目 OSS；复用既有 voice/video，未调用 Provider | `branch:main; commit:e999b1f2ce1f3d62168c3668de22b0fa6f8f9159; git status --porcelain=v1 -uall:60 paths（42 tracked + 18 untracked）` | project `2088580138567495681` → render task `2088580140291354626` → output asset `2088580141574811650`；下载 `videoops-t1-final-readable-2088580140291354626.mp4`；SHA-256、ffprobe、完整解码、black/freeze/silence 检测、8 段字幕与人工观感；Provider/数据库/Redis/端口前后对账 | `PASS`：新文件 5,244,591 bytes，SHA-256 `70AF66B5D57A43B3626DF1FE3C1CC85417010EC600C04050F3A93BA77FFEE0B7`；25.8 秒、1080×1920、30 fps、H.264 + AAC，音视频 start/end delta 均为 0，完整解码 exit 0，black/freeze/silence 均为 0。8 段字幕统一黑色 3 px 描边，人工观感较旧成品改善；底片与声音身份保持 T1.7 因果链，Provider job 总数仍为 2、无新 Provider 调用。DB0=2、DB14=marker-only、`sys_oss_config=0`，旧 8080 PID 不变，18081/39000/8189 均已释放。`NOT_RUN`：IndexTTS2、ComfyUI、RunningHub、DeepSeek 再调用 |
 | T1-E16 | T1.9 当前源码总门禁与 checkpoint | 当前 checkpoint 源码；本地测试、构建、静态门禁、运行状态对账与独立复核；未调用 Provider | `branch:main; checkpoint:本提交; base:e999b1f2ce1f3d62168c3668de22b0fa6f8f9159; input status paths:60; jar sha256:8174D10B91DF06ADA6A14661ACDA268756BCD08A200D50DFFFFDBAA621C77289` | 后端匹配测试与 user-api package；前端匹配测试、lint、tsc、build；launcher/bootstrap Pester；bootstrap validator；开发规范；staged diff/秘密/媒体门禁；新库/Redis/端口最终对账；未实施者独立审查 | `PASS`：后端 17 类 155/155，user-api package 成功；前端 8 文件 45/45，lint/tsc/build 全绿；launcher Pester 12/12、bootstrap Pester 16/16，bootstrap validator、开发规范和 staged diff check 全绿。59 个 ACMR 路径加 1 个删除全部暂存，二进制、`.runtime/.local`、媒体与高信号秘密命中均为 0；冗余日志/缓存已删除，仅在 ignored output 保留最终 MP4 与联系表。最终新库为 35 表、2 个成功 Provider job、2 个 ready project、2 个成功 render task/输出，全部 storage key 在项目 namespace，`sys_oss_config=0`；DB0=2、DB14=marker-only/foreign=0/OSS-like=0，运行账号访问 `ai_video` 被 1142 拒绝，旧 8080 PID/启动时间/命令摘要不变，18081/39000/8189 均未监听。未实施者复核为 `Accept for local/pilot checkpoint`，P0/P1=0；生产发布仍 `NOT_RUN` |
+| T2-E01 | T2 版本化契约、AgentRun 恢复/fencing 与迁移边界 | 当时的 T2 dirty 源码；Java 单元/编译与 SQL 静态门禁；真实 MySQL IT 当时尚未执行 | `branch:main; base checkpoint:1fe6a92a23e6d8b4f8aa12552f09c1097498ba9e; status paths:19（18 个 T2 + 根 AGENTS）；migration sha256:67D8C51C5A7A7C873A32A33A76CB6122325BFA83D0B4ADB6C78BDD228EC8B5F0` | `AgentRunServiceImplTest`；`AgentRunPersistenceIT` testCompile；bootstrap validator/Pester；开发规范；`git diff --check`；未实施者 fresh review；本机管理员只读能力与对象存在性门禁 | `HISTORICAL PASS/BLOCKED`：三张控制面表、manifest 顺序 `001..100→900`、38 表/126 索引/129 CHECK 静态合同通过；Service 单元 9/9、IT testCompile 与 reactor 编译通过；任务/候选资产事实、`DATETIME(6)`、CHECK UNKNOWN 及 waiting 外部任务失败/取消死路已收口。该时点因秘密处置和既有测试对象归属未确认而暂停，尚未执行 live IT；负责人后续接受风险并确认测试 schema 来源，阻塞已由 `T2-E02` 闭合。`NOT_RUN`：Provider、HTTP/UI、T3+ |
+| T2-E02 | T2 真实 MySQL 恢复、迟到结果与最小权限验收 | 当前 T2 checkpoint 源码；本机 MySQL `ai_video_test`；Redis 仅只读前后摘要；未访问 Provider/HTTP/UI | `branch:main; checkpoint:本提交; base:1fe6a92a23e6d8b4f8aa12552f09c1097498ba9e; input status paths:19; migration sha256:67D8C51C5A7A7C873A32A33A76CB6122325BFA83D0B4ADB6C78BDD228EC8B5F0` | `AgentRunPersistenceIT` Failsafe；`AgentRunServiceImplTest`；bootstrap validator/Pester；开发规范；diff/秘密门禁；MySQL 表残留、账号授权与双开发库负向探针；Redis DB0/DB14 只读摘要 | `PASS`：当前源码 Failsafe 报告新鲜 3/3，failure/error/skipped 均 0；随机六表残留 0，既有三张测试表原样保留。`videoops_agent_t2_it` 仅获 `ai_video_test.*` 的 `CREATE/DROP/SELECT/INSERT/UPDATE/DELETE`，无全局、对象、角色或 Grant Option，访问 `ai_video` 与 `videoops_agent_dev` 均被 1044 拒绝。旧库结构仍为 53 表，独立开发库仍为 35 表；Redis DB0/DB14 的 `DBSIZE` 前后为 2/1，IT 源码未创建 Redis client。单元 9/9、validator、Pester 16/16、开发规范与 diff/秘密检查全绿；敏感环境残留 0。`NOT_RUN`：Provider、HTTP/UI、T3+ |
 
 ## 下一条准确动作
 
-`DONE`：T1.0～T1.9 已由 `T1-E01..E16` 收口，本提交是本地 T1 checkpoint。按负责人已明确放行的下一阶段，后续唯一动作是为 T2 编写短 runbook，并实现最小 `DeliveryBrief + AcceptanceProfile + 可恢复 AgentRun` 持久契约；不得扩张到聊天 UI、Planner、质量评分、返工、多 Agent 或 T3+。
+`PAUSED`：T2 已完成真实 MySQL 纵切面与本地 checkpoint；等待独立验收。当前不进入 T3，不启动 HTTP/UI，不访问 Provider。
 
 ## 开工与收工协议
 

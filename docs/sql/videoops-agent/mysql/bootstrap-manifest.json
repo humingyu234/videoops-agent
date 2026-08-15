@@ -136,6 +136,18 @@
       ]
     },
     {
+      "id": "100",
+      "kind": "schema",
+      "file": "docs/sql/videoops-agent/mysql/100_agent_run_schema.sql",
+      "sha256": "67D8C51C5A7A7C873A32A33A76CB6122325BFA83D0B4ADB6C78BDD228EC8B5F0",
+      "purpose": "版本化交付目标、验收偏好与可恢复 AgentRun 持久契约",
+      "tables": [
+        "av_delivery_brief_version",
+        "av_acceptance_profile_version",
+        "av_agent_run"
+      ]
+    },
+    {
       "id": "900",
       "kind": "seed",
       "file": "docs/sql/videoops-agent/mysql/900_minimal_seed.sql",
