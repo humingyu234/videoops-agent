@@ -17,16 +17,31 @@ public interface IAgentRunService {
 
     AgentRunView getOwnedRun(AppPrincipalSnapshotDTO principal, long agentRunId);
 
+    ExecutionSnapshot getOwnedExecutionSnapshot(AppPrincipalSnapshotDTO principal, long agentRunId);
+
+    boolean blockForInput(AppPrincipalSnapshotDTO principal, BlockForInputCommand command);
+
     /** Claims queued/expired running work, or rotates the fence for the same expired waiting task. */
     AgentRunLease claim(AppPrincipalSnapshotDTO principal, ClaimAgentRunCommand command);
 
     WaitingReceipt waitForExternalTask(AppPrincipalSnapshotDTO principal,
                                        WaitForExternalTaskCommand command);
 
+    WaitingReceipt deferExternalTask(AppPrincipalSnapshotDTO principal,
+                                      DeferExternalTaskCommand command);
+
+    WaitingReceipt advanceExternalTask(AppPrincipalSnapshotDTO principal,
+                                        AdvanceExternalTaskCommand command);
+
+    WaitingReceipt retryExternalTask(AppPrincipalSnapshotDTO principal,
+                                      RetryExternalTaskCommand command);
+
     boolean completeExternalTask(AppPrincipalSnapshotDTO principal,
                                  CompleteExternalTaskCommand command);
 
     boolean finishLease(AppPrincipalSnapshotDTO principal, FinishAgentRunCommand command);
+
+    boolean stopOwnedRun(AppPrincipalSnapshotDTO principal, StopOwnedRunCommand command);
 
     record AppendDeliveryBriefCommand(
         Long briefId,
@@ -78,6 +93,41 @@ public interface IAgentRunService {
     ) {
     }
 
+    record BlockForInputCommand(
+        long agentRunId,
+        long expectedRowVersion,
+        long expectedContractRevision,
+        String errorCode,
+        String errorSummary
+    ) {
+    }
+
+    record DeferExternalTaskCommand(
+        LeaseProof lease,
+        String taskSource,
+        long taskId,
+        Instant resumeAfter
+    ) {
+    }
+
+    record AdvanceExternalTaskCommand(
+        LeaseProof lease,
+        String completedTaskSource,
+        long completedTaskId,
+        String nextTaskSource,
+        long nextTaskId,
+        Instant resumeAfter
+    ) {
+    }
+
+    record RetryExternalTaskCommand(
+        LeaseProof lease,
+        long failedTaskId,
+        long retryTaskId,
+        Instant resumeAfter
+    ) {
+    }
+
     record CompleteExternalTaskCommand(
         LeaseProof lease,
         String taskSource,
@@ -92,6 +142,16 @@ public interface IAgentRunService {
         String terminalStatus,
         Long candidateAssetId,
         String resultSummaryJson,
+        String errorCode,
+        String errorSummary
+    ) {
+    }
+
+    record StopOwnedRunCommand(
+        long agentRunId,
+        long expectedRowVersion,
+        long expectedContractRevision,
+        String terminalStatus,
         String errorCode,
         String errorSummary
     ) {
@@ -131,7 +191,22 @@ public interface IAgentRunService {
         String waitingTaskSource,
         Long waitingTaskId,
         Long candidateAssetId,
-        Instant stateChangedAt
+        Instant stateChangedAt,
+        long retryCount,
+        Instant startedAt,
+        Instant resumeAfter,
+        Instant finishedAt,
+        String errorCode,
+        String errorSummary
+    ) {
+    }
+
+    record ExecutionSnapshot(
+        AgentRunView run,
+        String deliveryBriefJson,
+        String deliveryBriefHash,
+        String acceptanceProfileJson,
+        String acceptanceProfileHash
     ) {
     }
 

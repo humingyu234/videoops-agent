@@ -6,6 +6,7 @@ import lombok.Getter;
 public enum AgentRunStatus {
     QUEUED("queued", false),
     RUNNING("running", false),
+    WAITING_INPUT("waiting_input", false),
     WAITING_EXTERNAL_TASK("waiting_external_task", false),
     COMPLETED("completed", true),
     FAILED("failed", true),

@@ -2,14 +2,14 @@
 
 公司项目只作为一次性脱敏代码基线。禁止在共享 `ai_video` 上迁移或初始化，也禁止把公司业务库整库复制到 VideoOps Agent。
 
-独立开发目标固定为本机 `videoops_agent_dev`。唯一 canonical bootstrap 入口是 `docs/sql/videoops-agent/mysql/bootstrap-manifest.json`：`001`、`010`、`020`、`030`、`040`、`050`、`060`、`070`、`080`、`090`、`100` 为 schema 步骤，`900` 为唯一 seed 步骤。目标身份、顺序、用途、允许写入表和 SHA-256 只以 manifest 为准，本文不复制哈希。
+独立开发目标固定为本机 `videoops_agent_dev`。唯一 canonical bootstrap 入口是 `docs/sql/videoops-agent/mysql/bootstrap-manifest.json`：`001`、`010`、`020`、`030`、`040`、`050`、`060`、`070`、`080`、`090`、`100`、`110` 为 schema 步骤，`900` 为唯一 seed 步骤。目标身份、顺序、用途、允许写入表和 SHA-256 只以 manifest 为准，本文不复制哈希。
 
 ## 空库重建顺序
 
 1. 使用受控管理员身份只读查询 `information_schema.schemata`。目标必须是 `127.0.0.1:3306/videoops_agent_dev`，且 schema 不存在；若已经存在但归属不明，立即停止，不覆盖、不 `DROP`。
 2. 创建 `videoops_agent_dev`，字符集 `utf8mb4`，排序规则 `utf8mb4_0900_ai_ci`。创建仅限该 schema 的运行账号 `videoops_agent`；它只保留 `SELECT`、`INSERT`、`UPDATE`、`DELETE`，不得获得全局、其他 schema、表级、列级、例程或 `GRANT OPTION` 权限。管理员/迁移身份只用于受控 bootstrap，不能成为应用依赖。
 3. 运行 `scripts/validate-videoops-database-bootstrap.ps1`。只有输出 `VIDEOOPS_DATABASE_BOOTSTRAP_OK` 且 `scripts/tests/validate-videoops-database-bootstrap.Tests.ps1` 全部通过，才可读取 manifest 执行。
-4. 按 manifest 逐文件执行 `001` 至 `100`。每步执行前复核 SHA-256，执行后检查退出码和文件自身 postcondition；任一步失败立即停止并只读对账。MySQL DDL 可能隐式提交，禁止 `--force`、整串当事务、盲目重跑或继续后续步骤。
+4. 按 manifest 逐文件执行 `001` 至 `110`。每步执行前复核 SHA-256，执行后检查退出码和文件自身 postcondition；任一步失败立即停止并只读对账。MySQL DDL 可能隐式提交，禁止 `--force`、整串当事务、盲目重跑或继续后续步骤。
 5. 所有 schema postcondition 通过且 38 张表总行数为 0 后，在同一个 MySQL 会话安全注入 `@videoops_creator_password_hash`，执行 `900_minimal_seed.sql`。不得把明文口令或 BCrypt 摘要放进参数、仓库、日志或聊天。使用相同会话摘要重复执行一次，退出码和 postcondition 必须再次通过，行数不得变化。
 6. 写入前后分别采集共享 `ai_video` 的结构/关键计数摘要与 Redis DB0/DB14 脱敏计数；任何差异都立即失败，不自动恢复旧数据。
 
@@ -20,7 +20,7 @@
 `docs/sql/ry_vue.sql`、`docs/sql/ai-video/mysql/` 下的旧迁移和 `20260810_00_development_database_initialization.sql` 只保留为来源审计，不得对 `videoops_agent_dev` 整文件执行：
 
 - `ry_vue.sql` 混合 24 张表结构与 332 条框架、demo、身份和 OSS 配置插入；T1 所需的六张最小框架表已收口到 `001_framework_schema.sql`。
-- 旧迁移混有管理端、RunningHub、旧权限 seed 和非幂等 ALTER；T1 最终结构已按真实黄金链提取到 `010` 至 `090`，T2 的三张 Agent 控制面表独立收口在 `100_agent_run_schema.sql`。
+- 旧迁移混有管理端、RunningHub、旧权限 seed 和非幂等 ALTER；T1 最终结构已按真实黄金链提取到 `010` 至 `090`，T2 的三张 Agent 控制面表独立收口在 `100_agent_run_schema.sql`，T4 只以 `110_agent_run_orchestration.sql` 窄升级现有 AgentRun。
 - `20260810_00` 含广账号、角色、权限和知识内容；纯合成最小数据已收口到 `900_minimal_seed.sql`。
 
 `ry_job.sql`、`ry_ai.sql`、`ry_workflow.sql` 不是当前 T1 用户端黄金链前置。将来若真实入口需要相应模块，再作为独立增量验收，不扩张本次 bootstrap。

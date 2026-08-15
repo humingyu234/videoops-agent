@@ -7,7 +7,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$expectedStepIds = @('001', '010', '020', '030', '040', '050', '060', '070', '080', '090', '100', '900')
+$expectedStepIds = @('001', '010', '020', '030', '040', '050', '060', '070', '080', '090', '100', '110', '900')
 $bootstrapRelativeRoot = 'docs/sql/videoops-agent/mysql'
 $errors = [System.Collections.Generic.List[string]]::new()
 

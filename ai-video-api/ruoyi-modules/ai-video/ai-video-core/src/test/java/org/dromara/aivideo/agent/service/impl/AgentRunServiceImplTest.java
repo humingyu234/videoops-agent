@@ -160,6 +160,41 @@ class AgentRunServiceImplTest {
         assertThat(runCaptor.getValue().getOwnerUserId()).isEqualTo(7L);
         assertThat(runCaptor.getValue().getRowVersion()).isZero();
         assertThat(runCaptor.getValue().getLeaseGeneration()).isZero();
+        assertThat(runCaptor.getValue().getRetryCount()).isZero();
+    }
+
+    @Test
+    void exposesTheOwnedFrozenContractAndBlocksOnlyTheExpectedQueuedRevision() {
+        AgentRun queued = run(501, 7, "queued", 0, 0);
+        queued.setRetryCount(2L);
+        DeliveryBriefVersion brief = brief(101, 201, 7, 1, null);
+        brief.setBriefJson("{\"scriptText\":\"hello\"}");
+        AcceptanceProfileVersion profile = profile(301, 401, 7, 101);
+        profile.setProfileJson("{\"maxRetries\":2}");
+        when(runMapper.selectOne(any(Wrapper.class))).thenReturn(queued);
+        when(briefMapper.selectOne(any(Wrapper.class))).thenReturn(brief);
+        when(profileMapper.selectOne(any(Wrapper.class))).thenReturn(profile);
+
+        IAgentRunService.ExecutionSnapshot snapshot =
+            service().getOwnedExecutionSnapshot(principal(7), 501);
+
+        assertThat(snapshot.run().agentRunId()).isEqualTo(501L);
+        assertThat(snapshot.run().retryCount()).isEqualTo(2L);
+        assertThat(snapshot.deliveryBriefJson()).isEqualTo("{\"scriptText\":\"hello\"}");
+        assertThat(snapshot.acceptanceProfileJson()).isEqualTo("{\"maxRetries\":2}");
+        assertThat(snapshot.deliveryBriefHash()).isEqualTo("a".repeat(64));
+        assertThat(snapshot.acceptanceProfileHash()).isEqualTo("b".repeat(64));
+
+        when(runMapper.selectDatabaseNow()).thenReturn(DATABASE_NOW);
+        when(runMapper.blockForInput(anyLong(), anyLong(), anyLong(), anyLong(), anyString(), anyString(),
+            any(LocalDateTime.class))).thenReturn(1, 0);
+        IAgentRunService.BlockForInputCommand command = new IAgentRunService.BlockForInputCommand(
+            501, 0, 1, "MISSING_SCRIPT", "请确认口播文案");
+
+        assertThat(service().blockForInput(principal(7), command)).isTrue();
+        assertThat(service().blockForInput(principal(7), command)).isFalse();
+        verify(runMapper, org.mockito.Mockito.times(2)).blockForInput(eq(501L), eq(7L), eq(1L), eq(0L),
+            eq("MISSING_SCRIPT"), eq("请确认口播文案"), eq(DATABASE_NOW));
     }
 
     @Test
@@ -238,6 +273,55 @@ class AgentRunServiceImplTest {
     }
 
     @Test
+    void defersAdvancesRetriesAndStopsWithTheSameOwnerScopedFence() {
+        when(runMapper.selectDatabaseNow()).thenReturn(DATABASE_NOW);
+        when(runMapper.deferExternalTask(anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyString(),
+            anyString(), anyLong(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(1);
+        when(runMapper.advanceExternalTask(anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyString(),
+            anyString(), anyLong(), anyString(), anyLong(), any(LocalDateTime.class), any(LocalDateTime.class)))
+            .thenReturn(1);
+        when(runMapper.retryExternalTask(anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyString(),
+            anyLong(), anyLong(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(1);
+        when(runMapper.stopOwnedRun(anyLong(), anyLong(), anyLong(), anyLong(), anyString(), anyString(),
+            anyString(), any(LocalDateTime.class))).thenReturn(1);
+        IAgentRunService.LeaseProof lease = new IAgentRunService.LeaseProof(501, 3, 1, 2, "raw-token");
+        Instant nextObservation = Instant.parse("2026-08-15T12:01:00Z");
+
+        IAgentRunService.WaitingReceipt deferred = service().deferExternalTask(principal(7),
+            new IAgentRunService.DeferExternalTaskCommand(
+                lease, "digital_human_generation", 701, nextObservation));
+        IAgentRunService.WaitingReceipt advanced = service().advanceExternalTask(principal(7),
+            new IAgentRunService.AdvanceExternalTaskCommand(lease, "digital_human_generation", 701,
+                "digital_human_generation", 702, nextObservation));
+        IAgentRunService.WaitingReceipt retried = service().retryExternalTask(principal(7),
+            new IAgentRunService.RetryExternalTaskCommand(lease, 801, 802, nextObservation));
+        boolean stopped = service().stopOwnedRun(principal(7), new IAgentRunService.StopOwnedRunCommand(
+            501, 3, 1, "cancelled", "USER_CANCELLED", "用户已取消执行"));
+
+        assertThat(deferred.lease().rowVersion()).isEqualTo(4L);
+        assertThat(deferred.taskId()).isEqualTo(701L);
+        assertThat(advanced.lease().rowVersion()).isEqualTo(4L);
+        assertThat(advanced.taskId()).isEqualTo(702L);
+        assertThat(retried.lease().rowVersion()).isEqualTo(4L);
+        assertThat(retried.taskSource()).isEqualTo("ai_task");
+        assertThat(retried.taskId()).isEqualTo(802L);
+        assertThat(stopped).isTrue();
+
+        verify(runMapper).deferExternalTask(eq(501L), eq(7L), eq(1L), eq(3L), eq(2L),
+            org.mockito.ArgumentMatchers.matches("[0-9a-f]{64}"), eq("digital_human_generation"), eq(701L),
+            eq(LocalDateTime.of(2026, 8, 15, 12, 1)), eq(DATABASE_NOW));
+        verify(runMapper).advanceExternalTask(eq(501L), eq(7L), eq(1L), eq(3L), eq(2L),
+            org.mockito.ArgumentMatchers.matches("[0-9a-f]{64}"), eq("digital_human_generation"), eq(701L),
+            eq("digital_human_generation"), eq(702L), eq(LocalDateTime.of(2026, 8, 15, 12, 1)),
+            eq(DATABASE_NOW));
+        verify(runMapper).retryExternalTask(eq(501L), eq(7L), eq(1L), eq(3L), eq(2L),
+            org.mockito.ArgumentMatchers.matches("[0-9a-f]{64}"), eq(801L), eq(802L),
+            eq(LocalDateTime.of(2026, 8, 15, 12, 1)), eq(DATABASE_NOW));
+        verify(runMapper).stopOwnedRun(eq(501L), eq(7L), eq(1L), eq(3L), eq("cancelled"),
+            eq("USER_CANCELLED"), eq("用户已取消执行"), eq(DATABASE_NOW));
+    }
+
+    @Test
     void recoversTheSameWaitingRunAndTaskWithANewFenceOnlyAfterExpiry() {
         AgentRun waiting = run(501, 7, "waiting_external_task", 2, 1);
         waiting.setWaitingTaskSource("digital_human_generation");
@@ -281,8 +365,39 @@ class AgentRunServiceImplTest {
             "task.task_type = 'timeline_render'",
             "task.task_status IN ('pending', 'queued', 'running', 'success')",
             "FROM av_dh_generation_job job", "job.id = #{taskId}", "job.owner_user_id = #{ownerUserId}",
-            "job.job_type = 'video_generate'", "job.status IN ('queued', 'running', 'succeeded')",
+            "job.job_type IN ('voice_generate', 'video_generate')",
+            "job.status IN ('queued', 'running', 'succeeded')",
             "#{taskSource} = 'ai_task'", "#{taskSource} = 'digital_human_generation'");
+        String blockCas = updateSql("blockForInput");
+        assertThat(blockCas).contains("run_status = 'queued'", "run_status = 'waiting_input'",
+            "owner_user_id = #{ownerUserId}", "contract_revision = #{expectedContractRevision}",
+            "row_version = #{expectedRowVersion}", "lease_token_digest IS NULL",
+            "waiting_task_source IS NULL", "error_code = #{errorCode}", "error_summary = #{errorSummary}");
+        String deferCas = updateSql("deferExternalTask");
+        assertThat(deferCas).contains("run_status = 'waiting_external_task'",
+            "contract_revision = #{expectedContractRevision}", "row_version = #{expectedRowVersion}",
+            "lease_generation = #{expectedLeaseGeneration}", "lease_token_digest = #{leaseTokenDigest}",
+            "lease_expires_at > #{databaseNow}", "waiting_task_source = #{taskSource}",
+            "waiting_task_id = #{taskId}", "job.job_type IN ('voice_generate', 'video_generate')",
+            "job.status IN ('queued', 'running')");
+        String advanceCas = updateSql("advanceExternalTask");
+        assertThat(advanceCas).contains("waiting_task_source = #{completedTaskSource}",
+            "waiting_task_id = #{completedTaskId}", "waiting_task_source = #{nextTaskSource}",
+            "waiting_task_id = #{nextTaskId}", "next_job.parent_job_id = completed_job.id",
+            "completed_job.job_type = 'voice_generate'", "next_job.job_type = 'video_generate'",
+            "project.source_type = 'digital_human_job'", "project.source_ref_id = completed_job.id",
+            "next_task.resource_type = 'creation_project'", "next_task.resource_id = project.project_id",
+            "lease_generation = #{expectedLeaseGeneration}", "lease_token_digest = #{leaseTokenDigest}",
+            "lease_expires_at > #{databaseNow}");
+        String retryCas = updateSql("retryExternalTask");
+        assertThat(retryCas).contains("retry_count = retry_count + 1", "waiting_task_id = #{failedTaskId}",
+            "waiting_task_id = #{retryTaskId}", "failed_task.task_status = 'failed'",
+            "retry_task.resource_id = failed_task.resource_id",
+            "retry_task.input_version_id = failed_task.input_version_id",
+            "retry_task.input_version_id IS NULL AND failed_task.input_version_id IS NULL",
+            "retry_task.task_id <> failed_task.task_id", "retry_task.task_type = 'timeline_render'",
+            "lease_generation = #{expectedLeaseGeneration}", "lease_token_digest = #{leaseTokenDigest}",
+            "lease_expires_at > #{databaseNow}");
         String externalCas = updateSql("completeExternalTask");
         assertThat(externalCas).contains("owner_user_id", "run_status = 'waiting_external_task'", "row_version",
             "lease_generation", "lease_token_digest", "waiting_task_source", "waiting_task_id",
@@ -302,12 +417,18 @@ class AgentRunServiceImplTest {
             "task.owner_user_id = #{ownerUserId}", "task.task_type = 'timeline_render'",
             "task.task_status = #{terminalStatus}",
             "FROM av_dh_generation_job job", "job.id = waiting_task_id",
-            "job.owner_user_id = #{ownerUserId}", "job.job_type = 'video_generate'",
+            "job.owner_user_id = #{ownerUserId}", "job.job_type IN ('voice_generate', 'video_generate')",
             "job.status = #{terminalStatus}",
             "#{terminalStatus} <> 'completed'", "FROM av_creation_asset asset",
             "asset.asset_id = #{candidateAssetId}", "asset.owner_user_id = #{ownerUserId}",
             "asset.asset_status = 'ready'", "asset.asset_type = 'video'", "asset.del_flag = '0'",
             "asset.usage_origin IN ('digital_human_output', 'timeline_render_output')");
+        String stopCas = updateSql("stopOwnedRun");
+        assertThat(stopCas).contains("owner_user_id = #{ownerUserId}",
+            "contract_revision = #{expectedContractRevision}", "row_version = #{expectedRowVersion}",
+            "run_status IN ('queued', 'waiting_input', 'running', 'waiting_external_task')",
+            "lease_owner = NULL", "lease_token_digest = NULL", "waiting_task_source = NULL",
+            "waiting_task_id = NULL", "waiting_contract_revision = NULL", "finished_at = #{databaseNow}");
         String waitingRecovery = updateSql("recoverWaitingLease");
         assertThat(waitingRecovery).contains("resume_after <= #{databaseNow}",
             "lease_expires_at <= #{databaseNow}", "waiting_task_source", "waiting_task_id");
@@ -362,6 +483,7 @@ class AgentRunServiceImplTest {
         run.setRunStatus(status);
         run.setRowVersion(rowVersion);
         run.setLeaseGeneration(generation);
+        run.setRetryCount(0L);
         run.setStateChangedAt(DATABASE_NOW);
         return run;
     }

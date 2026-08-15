@@ -27,6 +27,7 @@ public class AgentRun extends BaseEntity {
     private String runStatus;
     private Long rowVersion;
     private Long leaseGeneration;
+    private Long retryCount;
     private String leaseOwner;
     private String leaseTokenDigest;
     private LocalDateTime leaseExpiresAt;

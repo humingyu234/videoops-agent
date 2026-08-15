@@ -207,6 +207,7 @@ public class AgentRunServiceImpl implements IAgentRunService {
         run.setRunStatus(AgentRunStatus.QUEUED.getValue());
         run.setRowVersion(0L);
         run.setLeaseGeneration(0L);
+        run.setRetryCount(0L);
         run.setStateChangedAt(databaseNow);
         auditCreate(run, owner);
         try {
@@ -228,6 +229,33 @@ public class AgentRunServiceImpl implements IAgentRunService {
     @Override
     public AgentRunView getOwnedRun(AppPrincipalSnapshotDTO principal, long agentRunId) {
         return toView(requireRun(owner(principal), agentRunId));
+    }
+
+    @Override
+    public ExecutionSnapshot getOwnedExecutionSnapshot(AppPrincipalSnapshotDTO principal, long agentRunId) {
+        long owner = owner(principal);
+        AgentRun run = requireRun(owner, agentRunId);
+        DeliveryBriefVersion brief = requireBrief(owner, run.getDeliveryBriefVersionId());
+        AcceptanceProfileVersion profile = requireProfile(owner, run.getAcceptanceProfileVersionId());
+        if (!Objects.equals(profile.getDeliveryBriefVersionId(), brief.getDeliveryBriefVersionId())) {
+            throw notFound("版本化交付契约不存在");
+        }
+        return new ExecutionSnapshot(toView(run), brief.getBriefJson(), brief.getBriefHash(),
+            profile.getProfileJson(), profile.getProfileHash());
+    }
+
+    @Override
+    public boolean blockForInput(AppPrincipalSnapshotDTO principal, BlockForInputCommand command) {
+        long owner = owner(principal);
+        if (command == null || command.agentRunId() <= 0 || command.expectedRowVersion() < 0
+            || command.expectedContractRevision() <= 0) {
+            throw invalid("AgentRun 输入阻塞请求无效");
+        }
+        String errorCode = requiredErrorCode(command.errorCode());
+        String errorSummary = requiredErrorSummary(command.errorSummary());
+        LocalDateTime now = databaseNow();
+        return inAudit(owner, () -> runMapper.blockForInput(command.agentRunId(), owner,
+            command.expectedContractRevision(), command.expectedRowVersion(), errorCode, errorSummary, now)) == 1;
     }
 
     @Override
@@ -287,10 +315,7 @@ public class AgentRunServiceImpl implements IAgentRunService {
             throw invalid("外部任务等待请求无效");
         }
         LocalDateTime now = databaseNow();
-        LocalDateTime resumeAfter = local(command.resumeAfter());
-        if (!resumeAfter.isAfter(now)) {
-            throw invalid("外部任务恢复时间必须晚于当前时间");
-        }
+        LocalDateTime resumeAfter = futureResumeAfter(command.resumeAfter(), now);
         LeaseProof lease = command.lease();
         int updated = inAudit(owner, () -> runMapper.waitForExternalTask(lease.agentRunId(), owner,
             lease.contractRevision(), lease.rowVersion(), lease.leaseGeneration(), sha256(lease.leaseToken()),
@@ -301,6 +326,64 @@ public class AgentRunServiceImpl implements IAgentRunService {
         LeaseProof waitingLease = new LeaseProof(lease.agentRunId(), lease.rowVersion() + 1,
             lease.contractRevision(), lease.leaseGeneration(), lease.leaseToken());
         return new WaitingReceipt(waitingLease, command.taskSource(), command.taskId(), command.resumeAfter());
+    }
+
+    @Override
+    public WaitingReceipt deferExternalTask(AppPrincipalSnapshotDTO principal,
+                                             DeferExternalTaskCommand command) {
+        long owner = owner(principal);
+        if (command == null || !validLease(command.lease()) || !TASK_SOURCES.contains(command.taskSource())
+            || command.taskId() <= 0 || command.resumeAfter() == null) {
+            throw invalid("外部任务延期请求无效");
+        }
+        LocalDateTime now = databaseNow();
+        LocalDateTime resumeAfter = futureResumeAfter(command.resumeAfter(), now);
+        LeaseProof lease = command.lease();
+        int updated = inAudit(owner, () -> runMapper.deferExternalTask(lease.agentRunId(), owner,
+            lease.contractRevision(), lease.rowVersion(), lease.leaseGeneration(), sha256(lease.leaseToken()),
+            command.taskSource(), command.taskId(), resumeAfter, now));
+        return waitingReceipt(updated, lease, command.taskSource(), command.taskId(), command.resumeAfter());
+    }
+
+    @Override
+    public WaitingReceipt advanceExternalTask(AppPrincipalSnapshotDTO principal,
+                                               AdvanceExternalTaskCommand command) {
+        long owner = owner(principal);
+        if (command == null || !validLease(command.lease())
+            || !"digital_human_generation".equals(command.completedTaskSource())
+            || !("digital_human_generation".equals(command.nextTaskSource())
+            || "ai_task".equals(command.nextTaskSource()))
+            || command.completedTaskId() <= 0 || command.nextTaskId() <= 0
+            || command.completedTaskId() == command.nextTaskId() || command.resumeAfter() == null) {
+            throw invalid("外部任务推进请求无效");
+        }
+        LocalDateTime now = databaseNow();
+        LocalDateTime resumeAfter = futureResumeAfter(command.resumeAfter(), now);
+        LeaseProof lease = command.lease();
+        int updated = inAudit(owner, () -> runMapper.advanceExternalTask(lease.agentRunId(), owner,
+            lease.contractRevision(), lease.rowVersion(), lease.leaseGeneration(), sha256(lease.leaseToken()),
+            command.completedTaskSource(), command.completedTaskId(), command.nextTaskSource(),
+            command.nextTaskId(), resumeAfter, now));
+        return waitingReceipt(updated, lease, command.nextTaskSource(), command.nextTaskId(),
+            command.resumeAfter());
+    }
+
+    @Override
+    public WaitingReceipt retryExternalTask(AppPrincipalSnapshotDTO principal,
+                                             RetryExternalTaskCommand command) {
+        long owner = owner(principal);
+        if (command == null || !validLease(command.lease()) || command.failedTaskId() <= 0
+            || command.retryTaskId() <= 0 || command.failedTaskId() == command.retryTaskId()
+            || command.resumeAfter() == null) {
+            throw invalid("渲染任务重试请求无效");
+        }
+        LocalDateTime now = databaseNow();
+        LocalDateTime resumeAfter = futureResumeAfter(command.resumeAfter(), now);
+        LeaseProof lease = command.lease();
+        int updated = inAudit(owner, () -> runMapper.retryExternalTask(lease.agentRunId(), owner,
+            lease.contractRevision(), lease.rowVersion(), lease.leaseGeneration(), sha256(lease.leaseToken()),
+            command.failedTaskId(), command.retryTaskId(), resumeAfter, now));
+        return waitingReceipt(updated, lease, "ai_task", command.retryTaskId(), command.resumeAfter());
     }
 
     @Override
@@ -343,6 +426,30 @@ public class AgentRunServiceImpl implements IAgentRunService {
             lease.contractRevision(), lease.rowVersion(), lease.leaseGeneration(), sha256(lease.leaseToken()),
             terminal.getValue(), payload.candidateAssetId(), payload.resultJson(), payload.resultDigest(),
             payload.errorCode(), payload.errorSummary(), now)) == 1;
+    }
+
+    @Override
+    public boolean stopOwnedRun(AppPrincipalSnapshotDTO principal, StopOwnedRunCommand command) {
+        long owner = owner(principal);
+        if (command == null || command.agentRunId() <= 0 || command.expectedRowVersion() < 0
+            || command.expectedContractRevision() <= 0) {
+            throw invalid("AgentRun 停止请求无效");
+        }
+        AgentRunStatus terminal;
+        try {
+            terminal = AgentRunStatus.fromValue(command.terminalStatus());
+        } catch (IllegalArgumentException exception) {
+            throw invalid("AgentRun 停止终态无效");
+        }
+        if (terminal != AgentRunStatus.FAILED && terminal != AgentRunStatus.CANCELLED) {
+            throw invalid("AgentRun 停止终态无效");
+        }
+        String errorCode = requiredErrorCode(command.errorCode());
+        String errorSummary = requiredErrorSummary(command.errorSummary());
+        LocalDateTime now = databaseNow();
+        return inAudit(owner, () -> runMapper.stopOwnedRun(command.agentRunId(), owner,
+            command.expectedContractRevision(), command.expectedRowVersion(), terminal.getValue(),
+            errorCode, errorSummary, now)) == 1;
     }
 
     private VersionAppend briefAppend(long owner, Long stableId, Long parentVersionId) {
@@ -595,7 +702,9 @@ public class AgentRunServiceImpl implements IAgentRunService {
         return new AgentRunView(run.getAgentRunId(), run.getDeliveryBriefVersionId(),
             run.getAcceptanceProfileVersionId(), number(run.getContractRevision()), run.getRunStatus(),
             number(run.getRowVersion()), number(run.getLeaseGeneration()), run.getWaitingTaskSource(),
-            run.getWaitingTaskId(), run.getCandidateAssetId(), instant(run.getStateChangedAt()));
+            run.getWaitingTaskId(), run.getCandidateAssetId(), instant(run.getStateChangedAt()),
+            number(run.getRetryCount()), instant(run.getStartedAt()), instant(run.getResumeAfter()),
+            instant(run.getFinishedAt()), run.getErrorCode(), run.getErrorSummary());
     }
 
     private void auditCreate(DeliveryBriefVersion version, long owner) {
@@ -650,6 +759,24 @@ public class AgentRunServiceImpl implements IAgentRunService {
         return TASK_SOURCES.contains(run.getWaitingTaskSource()) && run.getWaitingTaskId() != null
             && run.getWaitingTaskId() > 0
             && Objects.equals(run.getWaitingContractRevision(), run.getContractRevision());
+    }
+
+    private LocalDateTime futureResumeAfter(Instant value, LocalDateTime databaseNow) {
+        LocalDateTime resumeAfter = local(value);
+        if (!resumeAfter.isAfter(databaseNow)) {
+            throw invalid("外部任务恢复时间必须晚于当前时间");
+        }
+        return resumeAfter;
+    }
+
+    private WaitingReceipt waitingReceipt(int updated, LeaseProof lease, String taskSource, long taskId,
+                                           Instant resumeAfter) {
+        if (updated != 1) {
+            return null;
+        }
+        LeaseProof nextLease = new LeaseProof(lease.agentRunId(), lease.rowVersion() + 1,
+            lease.contractRevision(), lease.leaseGeneration(), lease.leaseToken());
+        return new WaitingReceipt(nextLease, taskSource, taskId, resumeAfter);
     }
 
     private String idempotencyKey(String value) {

@@ -148,6 +148,16 @@
       ]
     },
     {
+      "id": "110",
+      "kind": "schema",
+      "file": "docs/sql/videoops-agent/mysql/110_agent_run_orchestration.sql",
+      "sha256": "67E074542ED120E6FF47A15A610A3254809E1BA009105772697E3B6DE1D367B2",
+      "purpose": "受约束编排的输入阻塞、重试计数与 AgentRun 状态升级",
+      "tables": [
+        "av_agent_run"
+      ]
+    },
+    {
       "id": "900",
       "kind": "seed",
       "file": "docs/sql/videoops-agent/mysql/900_minimal_seed.sql",
