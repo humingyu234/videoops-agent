@@ -354,9 +354,9 @@ CREATE TABLE IF NOT EXISTS av_agent_run_approval (
 SET @videoops_120_approval_constraints_current = (
     SELECT COUNT(*) = 2
        AND SUM(CONSTRAINT_NAME = 'ck_av_agent_run_approval_evaluation'
-               AND LOWER(CHECK_CLAUSE) LIKE '%evaluation_id is not null%') = 1
+               AND LOWER(REPLACE(CHECK_CLAUSE, '`', '')) LIKE '%evaluation_id is not null%') = 1
        AND SUM(CONSTRAINT_NAME = 'ck_av_agent_run_approval_decision'
-               AND LOWER(CHECK_CLAUSE) LIKE '%decided_by is not null%') = 1
+               AND LOWER(REPLACE(CHECK_CLAUSE, '`', '')) LIKE '%decided_by is not null%') = 1
     FROM information_schema.CHECK_CONSTRAINTS
     WHERE CONSTRAINT_SCHEMA = DATABASE()
       AND CONSTRAINT_NAME IN (
@@ -428,9 +428,9 @@ SET @videoops_120_schema_contract_ok = (
             ))
     AND (SELECT COUNT(*) = 2
               AND SUM(CONSTRAINT_NAME = 'ck_av_agent_run_approval_evaluation'
-                      AND LOWER(CHECK_CLAUSE) LIKE '%evaluation_id is not null%') = 1
+                      AND LOWER(REPLACE(CHECK_CLAUSE, '`', '')) LIKE '%evaluation_id is not null%') = 1
               AND SUM(CONSTRAINT_NAME = 'ck_av_agent_run_approval_decision'
-                      AND LOWER(CHECK_CLAUSE) LIKE '%decided_by is not null%') = 1
+                      AND LOWER(REPLACE(CHECK_CLAUSE, '`', '')) LIKE '%decided_by is not null%') = 1
          FROM information_schema.CHECK_CONSTRAINTS
          WHERE CONSTRAINT_SCHEMA = DATABASE()
            AND CONSTRAINT_NAME IN (

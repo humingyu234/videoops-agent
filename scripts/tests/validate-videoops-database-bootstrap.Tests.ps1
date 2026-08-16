@@ -63,6 +63,21 @@ Describe 'VideoOps database bootstrap static gate' {
         $result.Output | Should Match 'VIDEOOPS_DATABASE_BOOTSTRAP_OK'
     }
 
+    It 'normalizes MySQL 8.4 identifier quotes before checking approval nullability' {
+        $sqlPath = Join-Path $sourceBootstrapRoot '120_agent_run_quality_control.sql'
+        $sql = Get-Content -Raw -Encoding UTF8 -LiteralPath $sqlPath
+        $evaluationProbe = 'LOWER\(REPLACE\(CHECK_CLAUSE,\s*''`'',\s*''''\)\)\s+LIKE\s+''%evaluation_id is not null%'''
+        $decisionProbe = 'LOWER\(REPLACE\(CHECK_CLAUSE,\s*''`'',\s*''''\)\)\s+LIKE\s+''%decided_by is not null%'''
+
+        ([regex]::Matches($sql, $evaluationProbe)).Count | Should Be 2
+        ([regex]::Matches($sql, $decisionProbe)).Count | Should Be 2
+
+        $mysql84Clause = '((`approval_type` in (''conditional'',''final'')) and (`evaluation_id` is not null))'
+        $missingPredicate = '((`approval_type` in (''conditional'',''final'')) and (`evaluation_id` is null))'
+        $mysql84Clause.Replace('`', '').ToLowerInvariant().Contains('evaluation_id is not null') | Should Be $true
+        $missingPredicate.Replace('`', '').ToLowerInvariant().Contains('evaluation_id is not null') | Should Be $false
+    }
+
     It 'rejects USE ai_video even when the attacker synchronizes the file hash' {
         $fixtureRoot = New-BootstrapFixture
         $manifest = Read-FixtureManifest $fixtureRoot
