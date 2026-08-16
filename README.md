@@ -2,13 +2,13 @@
 
 面向图生数字人口播交付的受约束 Agent：从已确认的交付目标出发，复用现有人物、原声、数字人、时间轴与渲染能力，持续记录任务、质量结论和人工决策，最终交付可下载 MP4。
 
-> 目标产品入口是 `/agent`。T7 全链仍为 `NEEDS_EVIDENCE`，实时状态见 [docs/EXECUTION.md](docs/EXECUTION.md)；下方历史真实样例来自 `/studio` 黄金链，不代表 `/agent` 端到端已经完成。
+> 目标产品入口是 `/agent`。T7 已完成真实登录、AgentRun、批准、Trace 与一次声音调用，但在声音同步调用期间重启后按安全门禁转人工，完整全链仍为 `BLOCKED`；实时状态见 [docs/EXECUTION.md](docs/EXECUTION.md)。下方历史真实样例来自 `/studio` 黄金链，不代表 `/agent` 端到端已经完成。
 
 | 边界 | 证据等级 | 当前状态 |
 | --- | --- | --- |
 | T1 人工黄金链：`/studio` → IndexTTS2 / ComfyUI → 字幕与渲染 → MP4 | `REAL` | `PASS`，保留一条本机试运行成品 |
 | T2–T6：可恢复 AgentRun、白名单工具、质量门禁和有限返工 | `LOCAL` | 阶段 checkpoint 已有本机 MySQL / FFmpeg 及受控 adapter 边界证据 |
-| T7 默认 `/agent` 全链与四种演示 | `NOT_RUN` | 入口构建与认证烟测已通过；AgentRun 与四场景仍为 `NEEDS_EVIDENCE` |
+| T7 默认 `/agent` 全链与四种演示 | `PARTIAL / BLOCKED` | 真实 AgentRun、初始批准、过期批准拒绝、同任务重启查询与转人工已运行；成功成品和局部返工尚未到达 |
 | 私有 GitHub 交付目标 | `LOCAL` | `origin` 已指向 [humingyu234/videoops-agent](https://github.com/humingyu234/videoops-agent)，远端 `main` 仍停在 T6 checkpoint；T7 当前改动未 push，公开可见性未验证且冻结 |
 
 `REAL` 表示真实 Provider 或真实媒体边界已经运行；`LOCAL` 表示仅在本机隔离资源或受控 fake 外边界验证；`NOT_RUN` 表示不能作为完成声明。
@@ -25,7 +25,7 @@
   -> owned ready MP4 + AgentRun Trace
 ```
 
-- `/agent`：参赛默认入口，T7 完成后承载执行、Trace 与批准。
+- `/agent`：参赛默认入口，当前承载受约束执行、Trace 与批准；真实全链完成状态以 `EXECUTION` 为准。
 - `/studio`：保留的真实生产链、调试和人工接管入口，不作为默认参赛入口。
 - 服务端决定 owner、权限、幂等、任务终态和资产可见性；前端不能覆盖这些事实。
 - 自动重试与返工有次数、时间和成本上限；外部结果未知时不重复提交。
@@ -50,8 +50,8 @@ npm run dev
 | --- | --- | --- |
 | 成功交付 | 从真实 `/agent` 进入同一 AgentRun，关联真实任务与 owned ready MP4，下载后 ffprobe 有效 | `NEEDS_EVIDENCE` |
 | 一次局部修复 | 明确质量缺口只使受影响的时间轴/渲染分支重做，声音与数字人根任务不重复提交 | `NEEDS_EVIDENCE` |
-| 转人工 | 低置信或主观冲突进入待批准；跨 owner、过期或错误 revision 的决定零 mutation | `NEEDS_EVIDENCE` |
-| 重启恢复 | Provider 接受任务后仅重启本项目服务，继续查询同一任务和幂等键，提交计数仍为 1 | `NEEDS_EVIDENCE` |
+| 转人工 | 低置信或主观冲突进入待批准；跨 owner、过期或错误 revision 的决定零 mutation | `PARTIAL`：过期 revision 已真实拒绝；声音调用重启后稳定转人工；跨 owner 缺第二身份而 `NOT_RUN` |
+| 重启恢复 | Provider 接受任务后仅重启本项目服务，继续查询同一任务和幂等键，提交计数仍为 1 | `PARTIAL / BLOCKED`：同一声音任务、无重提已证明；同步 Provider 调用无持久 job id，重启后不能恢复结果 |
 
 这些占位只会在当前源码对应的 HTTP/UI、持久化和媒体证据全部成立后改为 `PASS`。
 

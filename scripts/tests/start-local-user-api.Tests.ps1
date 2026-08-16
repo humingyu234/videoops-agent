@@ -7,8 +7,12 @@ $captureVariableName = 'AI_VIDEO_DH_TEST_CAPTURED_MEDIA_ROOT'
 $timelineCaptureVariableName = 'AI_VIDEO_DH_TEST_CAPTURED_TIMELINE_WORK_ROOT'
 $argumentsCaptureVariableName = 'AI_VIDEO_DH_TEST_CAPTURED_JAVA_ARGUMENTS'
 $secretStateCaptureVariableName = 'AI_VIDEO_DH_TEST_CAPTURED_SECRET_STATE'
+$actuatorStateCaptureVariableName = 'AI_VIDEO_DH_TEST_CAPTURED_ACTUATOR_STATE'
 $workingDirectoryCaptureVariableName = 'AI_VIDEO_DH_TEST_CAPTURED_WORKING_DIRECTORY'
 $ossEnabledVariableName = 'VIDEOOPS_AIVIDEO_OSS_ENABLED'
+$actuatorPasswordVariableName = 'ACTUATOR_BASIC_PASSWORD'
+$resolvedFfmpegPath = 'C:\tools\ffmpeg-real.exe'
+$resolvedFfprobePath = 'C:\tools\ffprobe-real.exe'
 $localConfigRoot = Join-Path $repositoryRoot '.local\videoops-agent'
 $runtimeSecretNames = @(
     'VIDEOOPS_USER_SA_TOKEN_JWT_SECRET_KEY',
@@ -47,6 +51,29 @@ function Invoke-LocalUserApiLauncherForTest {
             [switch]$Raw
         )
         return $testSecretsJson
+    }
+
+    function Get-Item {
+        param(
+            [string]$LiteralPath,
+            [switch]$Force,
+            [object]$ErrorAction
+        )
+        if ($LiteralPath -eq 'ffmpeg') {
+            return [PSCustomObject]@{
+                LinkType = 'SymbolicLink'
+                Target = $resolvedFfmpegPath
+                Directory = [PSCustomObject]@{ FullName = 'C:\tools' }
+            }
+        }
+        if ($LiteralPath -eq 'ffprobe') {
+            return [PSCustomObject]@{
+                LinkType = 'SymbolicLink'
+                Target = $resolvedFfprobePath
+                Directory = [PSCustomObject]@{ FullName = 'C:\tools' }
+            }
+        }
+        return $null
     }
 
     function Set-Acl {
@@ -111,6 +138,14 @@ function Invoke-LocalUserApiLauncherForTest {
             ($secretStates -join ','),
             'Process'
         )
+        $actuatorState = if ([string]::IsNullOrWhiteSpace(
+            [Environment]::GetEnvironmentVariable($actuatorPasswordVariableName, 'Process')
+        )) { 'missing' } else { 'present' }
+        [Environment]::SetEnvironmentVariable(
+            $actuatorStateCaptureVariableName,
+            $actuatorState,
+            'Process'
+        )
         [Environment]::SetEnvironmentVariable(
             $workingDirectoryCaptureVariableName,
             (Get-Location).Path,
@@ -138,11 +173,14 @@ Describe 'start-local-user-api runtime configuration' {
             $script:previousRuntimeSecrets[$secretName] = [Environment]::GetEnvironmentVariable($secretName, 'Process')
         }
         $script:previousOssEnabled = [Environment]::GetEnvironmentVariable($ossEnabledVariableName, 'Process')
+        $script:previousActuatorPassword = [Environment]::GetEnvironmentVariable($actuatorPasswordVariableName, 'Process')
+        [Environment]::SetEnvironmentVariable($actuatorPasswordVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($ossEnabledVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($captureVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($timelineCaptureVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($argumentsCaptureVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($secretStateCaptureVariableName, $null, 'Process')
+        [Environment]::SetEnvironmentVariable($actuatorStateCaptureVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($workingDirectoryCaptureVariableName, $null, 'Process')
         $script:testLocalConfigPath = $null
     }
@@ -152,6 +190,7 @@ Describe 'start-local-user-api runtime configuration' {
         [Environment]::SetEnvironmentVariable($timelineCaptureVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($argumentsCaptureVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($secretStateCaptureVariableName, $null, 'Process')
+        [Environment]::SetEnvironmentVariable($actuatorStateCaptureVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($workingDirectoryCaptureVariableName, $null, 'Process')
         if ($null -ne $script:testLocalConfigPath -and (Test-Path -LiteralPath $script:testLocalConfigPath -PathType Leaf)) {
             Remove-Item -LiteralPath $script:testLocalConfigPath -Force
@@ -172,6 +211,11 @@ Describe 'start-local-user-api runtime configuration' {
             [Environment]::SetEnvironmentVariable($secretName, $script:previousRuntimeSecrets[$secretName], 'Process')
         }
         [Environment]::SetEnvironmentVariable($ossEnabledVariableName, $script:previousOssEnabled, 'Process')
+        [Environment]::SetEnvironmentVariable(
+            $actuatorPasswordVariableName,
+            $script:previousActuatorPassword,
+            'Process'
+        )
     }
 
     It 'provides a repository-local media root when the variable is unset' {
@@ -214,6 +258,13 @@ Describe 'start-local-user-api runtime configuration' {
         foreach ($secretName in $runtimeSecretNames) {
             [Environment]::GetEnvironmentVariable($secretName, 'Process') | Should BeNullOrEmpty
         }
+    }
+
+    It 'injects an ephemeral actuator password only for the child process window' {
+        Invoke-LocalUserApiLauncherForTest -Port 18081 | Out-Null
+
+        [Environment]::GetEnvironmentVariable($actuatorStateCaptureVariableName, 'Process') | Should Be 'present'
+        [Environment]::GetEnvironmentVariable($actuatorPasswordVariableName, 'Process') | Should BeNullOrEmpty
     }
 
     It 'uses the shared fail-closed OSS switch for the child process' {
@@ -262,6 +313,8 @@ Describe 'start-local-user-api runtime configuration' {
 
         $capturedArguments = [Environment]::GetEnvironmentVariable($argumentsCaptureVariableName, 'Process')
         $capturedArguments | Should Match ([Regex]::Escape('--aivideo.timeline.enabled=true'))
+        $capturedArguments | Should Match ([Regex]::Escape("--aivideo.timeline.ffmpeg-path=$resolvedFfmpegPath"))
+        $capturedArguments | Should Match ([Regex]::Escape("--aivideo.timeline.ffprobe-path=$resolvedFfprobePath"))
         $capturedArguments | Should Match ([Regex]::Escape('--aivideo.oss.enabled=true'))
         $capturedArguments | Should Not Match ([Regex]::Escape('--digital-human.index-tts2.base-url='))
         $capturedArguments | Should Not Match ([Regex]::Escape('--digital-human.comfy-ui.base-url='))
@@ -325,6 +378,7 @@ Describe 'start-local-user-api runtime configuration' {
         $capturedArguments | Should Match ([Regex]::Escape('--digital-human.index-tts2.base-url='))
         $capturedArguments | Should Match ([Regex]::Escape('--digital-human.comfy-ui.base-url='))
         $capturedArguments | Should Match ([Regex]::Escape('--spring.boot.admin.client.enabled=false'))
+        $capturedArguments | Should Match ([Regex]::Escape('--spring.boot.admin.client.username=local-actuator'))
         $capturedArguments | Should Match ([Regex]::Escape('--snail-job.enabled=false'))
         $capturedArguments | Should Match ([Regex]::Escape('--snail-ai.enabled=false'))
         $capturedArguments | Should Match ([Regex]::Escape('--mail.enabled=false'))

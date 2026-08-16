@@ -132,16 +132,52 @@ function Assert-GoldenPathEnvironment {
     }
 }
 
+function Resolve-LocalExecutablePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $command = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($null -eq $command -or [string]::IsNullOrWhiteSpace([string]$command.Source)) {
+        throw "GoldenPath 未找到本机可执行文件：$Name"
+    }
+
+    $resolvedPath = [string]$command.Source
+    $item = Get-Item -LiteralPath $resolvedPath -Force -ErrorAction SilentlyContinue
+    if ($null -ne $item -and -not [string]::IsNullOrWhiteSpace([string]$item.LinkType)) {
+        $targets = @($item.Target | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+        if ($targets.Count -ne 1) {
+            throw "GoldenPath 可执行文件链接必须唯一指向一个本机文件：$Name"
+        }
+
+        $targetPath = [string]$targets[0]
+        if (-not [System.IO.Path]::IsPathRooted($targetPath)) {
+            $targetPath = Join-Path $item.Directory.FullName $targetPath
+        }
+        $resolvedPath = [System.IO.Path]::GetFullPath($targetPath)
+    }
+
+    if (-not (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
+        throw "GoldenPath 本机可执行文件无效：$Name"
+    }
+    return $resolvedPath
+}
+
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $apiRoot = Join-Path $repositoryRoot 'ai-video-api'
 $jarPath = Join-Path $apiRoot 'ai-video-user-api\target\ai-video-user-api.jar'
 $localConfigRoot = [System.IO.Path]::GetFullPath((Join-Path $repositoryRoot '.local\videoops-agent'))
 $ossEnabled = Resolve-FailClosedBooleanEnvironmentVariable -Name 'VIDEOOPS_AIVIDEO_OSS_ENABLED'
+$timelineFfmpegExecutable = $null
+$timelineFfprobeExecutable = $null
 if ($EnableGoldenPath) {
     if ($ossEnabled -ne 'true') {
         throw 'GoldenPath 只允许在 VIDEOOPS_AIVIDEO_OSS_ENABLED=true 时启动。'
     }
     Assert-GoldenPathEnvironment
+    $timelineFfmpegExecutable = Resolve-LocalExecutablePath -Name 'ffmpeg'
+    $timelineFfprobeExecutable = Resolve-LocalExecutablePath -Name 'ffprobe'
 }
 
 if ([string]::IsNullOrWhiteSpace($LocalConfigPath)) {
@@ -199,6 +235,8 @@ $mediaRootName = 'AI_VIDEO_DH_MEDIA_ROOT'
 $previousMediaRoot = [Environment]::GetEnvironmentVariable($mediaRootName, 'Process')
 $timelineWorkRootName = 'AIVIDEO_TIMELINE_WORK_ROOT'
 $previousTimelineWorkRoot = [Environment]::GetEnvironmentVariable($timelineWorkRootName, 'Process')
+$actuatorPasswordName = 'ACTUATOR_BASIC_PASSWORD'
+$previousActuatorPassword = [Environment]::GetEnvironmentVariable($actuatorPasswordName, 'Process')
 $runtimeMediaRoot = Join-Path $repositoryRoot '.runtime\videoops-agent\digital-human-media'
 $runtimeTimelineWorkRoot = Join-Path $repositoryRoot '.runtime\videoops-agent\timeline-work'
 $runtimeUserApiRoot = Join-Path $repositoryRoot '.runtime\videoops-agent\user-api'
@@ -214,6 +252,9 @@ foreach ($secretName in $secretNames) {
 
 Set-Item -Path "Env:$mediaRootName" -Value $runtimeMediaRoot
 Set-Item -Path "Env:$timelineWorkRootName" -Value $runtimeTimelineWorkRoot
+if ([string]::IsNullOrWhiteSpace($previousActuatorPassword)) {
+    [Environment]::SetEnvironmentVariable($actuatorPasswordName, (New-LocalRuntimeSecret), 'Process')
+}
 
 Write-Host "正在启动创作端后端：http://localhost:$Port"
 Write-Host "本地安全密钥已持久化并复用：$runtimeSecretsPath"
@@ -247,6 +288,7 @@ try {
         '--aivideo.oss.prefix=videoops-agent/dev'
         '--questionnaire.deepseek.api-key='
         '--spring.boot.admin.client.enabled=false'
+        '--spring.boot.admin.client.username=local-actuator'
         '--snail-job.enabled=false'
         '--snail-ai.enabled=false'
         '--mail.enabled=false'
@@ -255,6 +297,10 @@ try {
     if (-not $EnableGoldenPath) {
         $applicationArguments += '--digital-human.index-tts2.base-url='
         $applicationArguments += '--digital-human.comfy-ui.base-url='
+    }
+    else {
+        $applicationArguments += "--aivideo.timeline.ffmpeg-path=$timelineFfmpegExecutable"
+        $applicationArguments += "--aivideo.timeline.ffprobe-path=$timelineFfprobeExecutable"
     }
     if ([System.IO.File]::Exists($LocalConfigPath)) {
         $resolvedLocalConfig = (Resolve-Path -LiteralPath $LocalConfigPath).Path
@@ -293,6 +339,7 @@ finally {
     else {
         Set-Item -Path "Env:$timelineWorkRootName" -Value $previousTimelineWorkRoot
     }
+    [Environment]::SetEnvironmentVariable($actuatorPasswordName, $previousActuatorPassword, 'Process')
 }
 
 if ($applicationExitCode -ne 0) {
