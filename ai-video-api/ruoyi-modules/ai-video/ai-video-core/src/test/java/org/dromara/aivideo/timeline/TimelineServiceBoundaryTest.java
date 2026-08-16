@@ -46,6 +46,7 @@ class TimelineServiceBoundaryTest {
             "markPendingRenderFailed(long,org.dromara.aivideo.creation.dto.RenderOutputFailureDTO):void",
             "openOwnedMedia(long,java.lang.String,org.dromara.aivideo.timeline.enums.TimelineAssetUsageType):org.dromara.aivideo.creation.service.CreationMediaHandle",
             "openOwnedMediaRange(long,java.lang.String,java.lang.String):org.dromara.aivideo.creation.service.CreationMediaHandle",
+            "openOwnedTimelineRenderOutput(long,java.lang.String,java.lang.String):org.dromara.aivideo.creation.service.CreationMediaHandle",
             "pageOwned(long,org.dromara.aivideo.creation.dto.CreationAssetQueryDTO,org.dromara.common.mybatis.core.page.PageQuery):org.dromara.common.core.domain.PageResult<org.dromara.aivideo.creation.dto.CreationAssetDTO>",
             "registerPendingRenderOutput(long,org.dromara.aivideo.creation.dto.RegisterPendingRenderOutputDTO):org.dromara.aivideo.creation.dto.PendingRenderOutputDTO",
             "resolveDigitalHumanSource(long,java.lang.String):org.dromara.aivideo.creation.dto.DigitalHumanCreationSourceDTO",
@@ -54,6 +55,7 @@ class TimelineServiceBoundaryTest {
             "uploadOwned(long,org.dromara.aivideo.creation.dto.CreationAssetUploadDTO,java.io.InputStream):org.dromara.aivideo.creation.dto.CreationAssetDTO");
         assertMethods(TIMELINE + "ITimelineMediaRenderService",
             "cancel(java.lang.String,java.lang.String):void",
+            "inspectQuality(org.dromara.aivideo.creation.service.CreationMediaHandle):org.dromara.aivideo.timeline.dto.TimelineMediaQualityInspectionDTO",
             "measureText(org.dromara.aivideo.timeline.dto.TimelineTextMeasureCommandDTO):org.dromara.aivideo.timeline.dto.TimelineTextMeasureResultDTO",
             "probe(org.dromara.aivideo.creation.service.CreationMediaHandle):org.dromara.aivideo.timeline.dto.TimelineMediaProbeDTO",
             "render(org.dromara.aivideo.timeline.dto.TimelineRenderCommandDTO,java.util.List<org.dromara.aivideo.creation.service.CreationMediaHandle>,org.dromara.aivideo.timeline.service.TimelineTaskProgressListener,java.util.function.BooleanSupplier):org.dromara.aivideo.timeline.service.TimelineRenderOutputHandle");

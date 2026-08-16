@@ -3,6 +3,7 @@ package org.dromara.aivideo.infra.timeline.render;
 import org.dromara.aivideo.creation.service.CreationMediaHandle;
 import org.dromara.aivideo.timeline.constant.TimelineErrorCodes;
 import org.dromara.aivideo.timeline.dto.TimelineMediaProbeDTO;
+import org.dromara.aivideo.timeline.dto.TimelineMediaQualityInspectionDTO;
 import org.dromara.aivideo.timeline.dto.TimelineRenderCommandDTO;
 import org.dromara.aivideo.timeline.dto.TimelineTextMeasureCommandDTO;
 import org.dromara.aivideo.timeline.dto.TimelineTextMeasureResultDTO;
@@ -21,6 +22,11 @@ public final class UnavailableTimelineMediaRenderService implements ITimelineMed
 
     @Override
     public TimelineMediaProbeDTO probe(CreationMediaHandle input) {
+        throw unavailable();
+    }
+
+    @Override
+    public TimelineMediaQualityInspectionDTO inspectQuality(CreationMediaHandle input) {
         throw unavailable();
     }
 

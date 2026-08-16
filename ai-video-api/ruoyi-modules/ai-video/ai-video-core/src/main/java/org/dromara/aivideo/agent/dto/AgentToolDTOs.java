@@ -1,5 +1,6 @@
 package org.dromara.aivideo.agent.dto;
 
+import org.dromara.aivideo.timeline.dto.TimelineOutputQualityDTO;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -99,7 +100,28 @@ public final class AgentToolDTOs {
         Integer height,
         boolean hasVideoStream,
         boolean hasAudioStream,
-        String downloadPath
+        String downloadPath,
+        TimelineOutputQualityDTO quality
     ) implements Result {
+
+        public OutputInspectionResult(
+            String taskId,
+            String assetId,
+            String status,
+            String assetType,
+            String usageOrigin,
+            String mimeType,
+            String sha256,
+            long sizeBytes,
+            Long durationMs,
+            Integer width,
+            Integer height,
+            boolean hasVideoStream,
+            boolean hasAudioStream,
+            String downloadPath
+        ) {
+            this(taskId, assetId, status, assetType, usageOrigin, mimeType, sha256, sizeBytes, durationMs,
+                width, height, hasVideoStream, hasAudioStream, downloadPath, null);
+        }
     }
 }

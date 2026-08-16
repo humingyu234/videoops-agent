@@ -244,6 +244,16 @@ public class CreationAssetServiceImpl implements ICreationAssetService {
 
     @Override
     public CreationAssetDTO getOwnedTimelineRenderOutput(long actorId, String taskId, String resultAssetId) {
+        return toDto(requireOwnedTimelineRenderOutput(actorId, taskId, resultAssetId));
+    }
+
+    @Override
+    public CreationMediaHandle openOwnedTimelineRenderOutput(long actorId, String taskId, String resultAssetId) {
+        CreationAsset asset = requireOwnedTimelineRenderOutput(actorId, taskId, resultAssetId);
+        return open(asset, null, 0, asset.getSizeBytes(), null);
+    }
+
+    private CreationAsset requireOwnedTimelineRenderOutput(long actorId, String taskId, String resultAssetId) {
         if (actorId <= 0) {
             throw assetInvalid("创作成品不可用");
         }
@@ -254,7 +264,7 @@ public class CreationAssetServiceImpl implements ICreationAssetService {
         if (!isOwnedTimelineRenderOutput(asset, actorId, parsedTaskId, parsedResultAssetId)) {
             throw assetInvalid("创作成品不可用");
         }
-        return toDto(asset);
+        return asset;
     }
 
     @Override
@@ -841,7 +851,7 @@ public class CreationAssetServiceImpl implements ICreationAssetService {
         return new CreationAssetResolveDTO(Long.toString(asset.getAssetId()), asset.getMimeType(), asset.getSha256(),
             CreationAssetType.fromValue(asset.getAssetType()), usageType, asset.getSizeBytes(), asset.getDurationMs(),
             asset.getWidth(), asset.getHeight(), Boolean.TRUE.equals(asset.getHasVideoStream()),
-            Boolean.TRUE.equals(asset.getHasAudioStream()));
+            Boolean.TRUE.equals(asset.getHasAudioStream()), CreationAssetUsageOrigin.fromValue(asset.getUsageOrigin()));
     }
 
     private ByteRange parseSingleRange(String header, long totalSize) {

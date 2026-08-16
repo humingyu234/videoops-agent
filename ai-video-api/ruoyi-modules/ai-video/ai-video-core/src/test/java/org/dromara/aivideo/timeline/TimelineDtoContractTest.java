@@ -125,7 +125,10 @@ public class TimelineDtoContractTest {
             "assetId", "java.lang.String", "mediaType", "java.lang.String", "formatName", "java.lang.String",
             "durationMs", "long", "fileSize", "long", "width", "java.lang.Integer", "height", "java.lang.Integer",
             "frameRate", "java.lang.Integer", "sampleRate", "java.lang.Integer", "channels", "java.lang.Integer",
-            "videoStream", "boolean", "audioStream", "boolean"));
+            "videoStream", "boolean", "audioStream", "boolean", "videoCodec", "java.lang.String",
+            "audioCodec", "java.lang.String"));
+        contracts.put(TIMELINE_DTO + "TimelineMediaQualityInspectionDTO", components(
+            "probe", TIMELINE_DTO + "TimelineMediaProbeDTO", "fullyDecoded", "boolean"));
         contracts.put(TIMELINE_DTO + "TimelineRenderCommandDTO", components(
             "taskId", "java.lang.String", "executionId", "java.lang.String", "attemptId", "java.lang.String",
             "inputVersionId", "java.lang.String", "fontRegistryVersion", "java.lang.String",
@@ -187,7 +190,8 @@ public class TimelineDtoContractTest {
             "assetId", "java.lang.String", "mimeType", "java.lang.String", "sha256", "java.lang.String",
             "assetType", CREATION_ENUM + "CreationAssetType", "usageType", TIMELINE_ENUM + "TimelineAssetUsageType",
             "sizeBytes", "long", "durationMs", "java.lang.Long", "width", "java.lang.Integer", "height", "java.lang.Integer",
-            "hasVideoStream", "boolean", "hasAudioStream", "boolean"));
+            "hasVideoStream", "boolean", "hasAudioStream", "boolean",
+            "usageOrigin", CREATION_ENUM + "CreationAssetUsageOrigin"));
         contracts.put(CREATION_DTO + "DigitalHumanCreationSourceDTO", components(
             "sourceId", "java.lang.String", "baseVideoAssetId", "java.lang.String", "primaryAudioAssetId", "java.lang.String",
             "scriptTextSnapshot", "java.lang.String", "durationMs", "long", "width", "int", "height", "int",

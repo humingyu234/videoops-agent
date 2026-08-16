@@ -148,6 +148,26 @@ class CreationAssetServiceImplTest {
     }
 
     @Test
+    void opensOnlyTheOwnedReadyTimelineRenderOutputWithExplicitOrigin() throws IOException {
+        CreationAsset output = timelineRenderAsset(88L, 99L);
+        when(assetMapper.selectOwnedTimelineRenderOutput(7L, 99L, 88L)).thenReturn(output);
+        when(ossClientProvider.getIfAvailable()).thenReturn(ossClient);
+        when(ossClient.config()).thenReturn(OssClientConfig.builder().bucket("creation-bucket").build());
+        when(ossClient.doCustomBufferedDownload(any(),
+            org.mockito.ArgumentMatchers.eq(Duration.ofSeconds(30)))).thenReturn(responseStream);
+
+        CreationMediaHandle result = new CreationAssetServiceImpl(assetMapper, ossClientProvider)
+            .openOwnedTimelineRenderOutput(7L, "99", "88");
+
+        assertThat(result.metadata().usageType()).isNull();
+        assertThat(result.metadata().usageOrigin()).isEqualTo(CreationAssetUsageOrigin.TIMELINE_RENDER_OUTPUT);
+        assertThat(result.metadata().assetType()).isEqualTo(CreationAssetType.VIDEO);
+        verifyRangeRequest("creation-bucket", "creation-assets/7/88.mp4", null);
+        result.close();
+        verify(responseStream).close();
+    }
+
+    @Test
     void rejectsMissingMismatchedCrossOwnerNonReadyAndWrongTypeRenderOutputs() {
         CreationAsset crossOwner = timelineRenderAsset(88L, 99L);
         crossOwner.setOwnerUserId(8L);

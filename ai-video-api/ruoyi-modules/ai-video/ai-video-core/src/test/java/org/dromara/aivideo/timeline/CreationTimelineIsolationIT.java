@@ -7,6 +7,7 @@ import org.dromara.aivideo.timeline.dto.TimelineFancyTextSuggestionResultDTO;
 import org.dromara.aivideo.timeline.dto.TimelineImagePromptCommandDTO;
 import org.dromara.aivideo.timeline.dto.TimelineImagePromptResultDTO;
 import org.dromara.aivideo.timeline.dto.TimelineMediaProbeDTO;
+import org.dromara.aivideo.timeline.dto.TimelineMediaQualityInspectionDTO;
 import org.dromara.aivideo.timeline.dto.TimelineRenderCommandDTO;
 import org.dromara.aivideo.timeline.dto.TimelineSubtitleAlignmentCommandDTO;
 import org.dromara.aivideo.timeline.dto.TimelineSubtitleAlignmentResultDTO;
@@ -449,6 +450,11 @@ class CreationTimelineIsolationIT {
     private static final class TestTimelineMediaRenderService implements ITimelineMediaRenderService {
         @Override
         public TimelineMediaProbeDTO probe(CreationMediaHandle input) {
+            throw new UnsupportedOperationException("test double");
+        }
+
+        @Override
+        public TimelineMediaQualityInspectionDTO inspectQuality(CreationMediaHandle input) {
             throw new UnsupportedOperationException("test double");
         }
 

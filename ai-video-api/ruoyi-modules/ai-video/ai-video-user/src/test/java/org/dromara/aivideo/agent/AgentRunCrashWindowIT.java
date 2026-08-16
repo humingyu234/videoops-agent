@@ -22,6 +22,7 @@ import org.dromara.aivideo.identity.dto.AppPrincipalSnapshotDTO;
 import org.dromara.aivideo.infra.digitalhuman.FileSystemDigitalHumanMediaStorageService;
 import org.dromara.aivideo.portrait.service.IPortraitService;
 import org.dromara.aivideo.task.service.IAiTaskService;
+import org.dromara.aivideo.timeline.service.ITimelineOutputQualityService;
 import org.dromara.aivideo.user.agent.service.impl.AgentToolServiceImpl;
 import org.dromara.aivideo.user.timeline.service.TimelineTaskApplicationService;
 import org.dromara.aivideo.voice.dto.VoiceDTO;
@@ -165,7 +166,8 @@ class AgentRunCrashWindowIT {
             generationService, voiceService, mock(IPortraitService.class), assetService);
         return new AgentToolServiceImpl(resourceService, generationService,
             mock(ICreationProjectService.class), mock(ICreationAssetService.class),
-            mock(TimelineTaskApplicationService.class), mock(IAiTaskService.class));
+            mock(TimelineTaskApplicationService.class), mock(IAiTaskService.class),
+            mock(ITimelineOutputQualityService.class));
     }
 
     private static final class CountingVoiceProvider implements IVoiceSynthesisService {

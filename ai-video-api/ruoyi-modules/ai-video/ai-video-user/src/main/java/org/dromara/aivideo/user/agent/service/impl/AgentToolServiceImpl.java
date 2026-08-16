@@ -25,6 +25,8 @@ import org.dromara.aivideo.task.enums.AiTaskResourceType;
 import org.dromara.aivideo.task.enums.AiTaskStatus;
 import org.dromara.aivideo.task.enums.AiTaskType;
 import org.dromara.aivideo.task.service.IAiTaskService;
+import org.dromara.aivideo.timeline.dto.TimelineOutputQualityDTO;
+import org.dromara.aivideo.timeline.service.ITimelineOutputQualityService;
 import org.dromara.aivideo.user.timeline.domain.bo.CreateTimelineRenderTaskBo;
 import org.dromara.aivideo.user.timeline.service.TimelineTaskApplicationService;
 import org.dromara.common.core.exception.ServiceException;
@@ -68,6 +70,7 @@ public class AgentToolServiceImpl implements IAgentToolService {
     private final ICreationAssetService assetService;
     private final TimelineTaskApplicationService timelineTaskService;
     private final IAiTaskService taskService;
+    private final ITimelineOutputQualityService qualityService;
 
     @Override
     public AgentToolDTOs.Result execute(AppPrincipalSnapshotDTO principal, AgentToolDTOs.Call call) {
@@ -183,10 +186,11 @@ public class AgentToolServiceImpl implements IAgentToolService {
             throw invalidResult();
         }
         CreationAssetDTO asset = requireOutput(context.actorId(), task).asset();
+        TimelineOutputQualityDTO quality = qualityService.evaluate(context.actorId(), task, asset);
         return new AgentToolDTOs.OutputInspectionResult(task.taskId(), asset.assetId(), asset.status().value(),
             asset.assetType().value(), asset.usageOrigin().value(), asset.mimeType(), asset.sha256(), asset.sizeBytes(),
             asset.durationMs(), asset.width(), asset.height(), asset.hasVideoStream(), asset.hasAudioStream(),
-            "/api/studio/creation-assets/" + asset.assetId() + "/content");
+            "/api/studio/creation-assets/" + asset.assetId() + "/content", quality);
     }
 
     private AgentToolDTOs.GenerationJobResult job(DigitalHumanJobDTO value) {

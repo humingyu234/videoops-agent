@@ -23,6 +23,8 @@ import org.dromara.aivideo.identity.security.ConditionalOnAppSecurityEnabled;
 import org.dromara.aivideo.task.dto.AiTaskAccessScopeDTO;
 import org.dromara.aivideo.task.dto.AiTaskDTO;
 import org.dromara.aivideo.task.service.IAiTaskService;
+import org.dromara.aivideo.timeline.dto.TimelineOutputQualityDTO;
+import org.dromara.aivideo.timeline.service.ITimelineOutputQualityService;
 import org.dromara.aivideo.user.timeline.domain.bo.CreateTimelineRenderTaskBo;
 import org.dromara.aivideo.user.timeline.service.TimelineTaskApplicationService;
 import org.dromara.common.core.exception.ServiceException;
@@ -37,6 +39,7 @@ import tools.jackson.databind.node.ObjectNode;
 
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,6 +74,8 @@ class AgentToolServiceImplTest {
     private TimelineTaskApplicationService timelineTaskService;
     @Mock
     private IAiTaskService taskService;
+    @Mock
+    private ITimelineOutputQualityService qualityService;
 
     @Test
     void onlyAssemblesWhenAppSecurityIsEnabled() {
@@ -137,7 +142,11 @@ class AgentToolServiceImplTest {
         when(taskService.getOwned(scope, "801")).thenReturn(renderTask("success", "901"));
         lenient().when(projectService.getLatestOutputOwned(1001L, "701"))
             .thenReturn(new CreationOutputDTO("701", "902", "802", Instant.EPOCH));
-        when(assetService.getOwnedTimelineRenderOutput(1001L, "801", "901")).thenReturn(outputAsset());
+        CreationAssetDTO outputAsset = outputAsset();
+        TimelineOutputQualityDTO quality = new TimelineOutputQualityDTO("801", "901", "a".repeat(64), "701",
+            "b".repeat(64), "t5-quality-1", List.of());
+        when(assetService.getOwnedTimelineRenderOutput(1001L, "801", "901")).thenReturn(outputAsset);
+        when(qualityService.evaluate(1001L, renderTask("success", "901"), outputAsset)).thenReturn(quality);
 
         AgentToolDTOs.RenderStatusResult status = (AgentToolDTOs.RenderStatusResult) service().execute(principal,
             call("get_timeline_render_status", json("taskId", "801")));
@@ -153,6 +162,7 @@ class AgentToolServiceImplTest {
             assertThat(result.hasVideoStream()).isTrue();
             assertThat(result.hasAudioStream()).isTrue();
             assertThat(result.downloadPath()).isEqualTo("/api/studio/creation-assets/901/content");
+            assertThat(result.quality()).isSameAs(quality);
         });
         verify(projectService, never()).getLatestOutputOwned(1001L, "701");
     }
@@ -175,7 +185,7 @@ class AgentToolServiceImplTest {
             call("get_timeline_render_status", extra)), 46702);
 
         verifyNoInteractions(resourceGenerationService, generationService, projectService, assetService,
-            timelineTaskService, taskService);
+            timelineTaskService, taskService, qualityService);
     }
 
     @Test
@@ -280,7 +290,7 @@ class AgentToolServiceImplTest {
 
     private AgentToolServiceImpl service() {
         return new AgentToolServiceImpl(resourceGenerationService, generationService, projectService, assetService,
-            timelineTaskService, taskService);
+            timelineTaskService, taskService, qualityService);
     }
 
     private AgentToolDTOs.Call call(String name, ObjectNode arguments) {

@@ -2,6 +2,7 @@ package org.dromara.aivideo.infra.timeline.render;
 
 import org.dromara.aivideo.creation.dto.CreationAssetResolveDTO;
 import org.dromara.aivideo.creation.enums.CreationAssetType;
+import org.dromara.aivideo.creation.enums.CreationAssetUsageOrigin;
 import org.dromara.aivideo.creation.service.CreationMediaHandle;
 import org.dromara.aivideo.infra.timeline.TimelineInfrastructureProperties;
 import org.dromara.aivideo.infra.timeline.path.TimelinePathGuard;
@@ -11,6 +12,7 @@ import org.dromara.aivideo.infra.timeline.process.TimelineProcessRequest;
 import org.dromara.aivideo.infra.timeline.process.TimelineProcessResult;
 import org.dromara.aivideo.task.enums.AiTaskStage;
 import org.dromara.aivideo.timeline.dto.TimelineMediaProbeDTO;
+import org.dromara.aivideo.timeline.dto.TimelineMediaQualityInspectionDTO;
 import org.dromara.aivideo.timeline.dto.TimelineProgressDTO;
 import org.dromara.aivideo.timeline.dto.TimelineRenderCommandDTO;
 import org.dromara.aivideo.timeline.dto.TimelineTextMeasureResultDTO;
@@ -102,6 +104,68 @@ class FfmpegTimelineMediaRenderServiceTest {
 
         assertThat(result.videoStream()).isTrue();
         assertThat(result.audioStream()).isTrue();
+        assertThat(result.videoCodec()).isEqualTo("h264");
+        assertThat(result.audioCodec()).isEqualTo("aac");
+        assertThat(processExecutor.requests).isEmpty();
+    }
+
+    @Test
+    void inspectsFactsAndFullyDecodesOneControlledMaterialization() throws Exception {
+        byte[] content = "base-video".getBytes(StandardCharsets.UTF_8);
+        CreationAssetResolveDTO metadata = new CreationAssetResolveDTO("1", "video/mp4", sha256(content),
+            CreationAssetType.VIDEO, null, content.length, 3_000L, null, null,
+            false, false, CreationAssetUsageOrigin.TIMELINE_RENDER_OUTPUT);
+        CountingHandle handle = new CountingHandle(metadata, content);
+
+        TimelineMediaQualityInspectionDTO result = service(512L * 1024L, ignored -> { }).inspectQuality(handle);
+
+        assertThat(result.fullyDecoded()).isTrue();
+        assertThat(result.probe().videoCodec()).isEqualTo("h264");
+        assertThat(result.probe().audioCodec()).isEqualTo("aac");
+        assertThat(handle.streamCalls()).isEqualTo(1);
+        assertThat(processExecutor.requests).singleElement().satisfies(request -> {
+            assertThat(request.command()).containsSubsequence("-loglevel", "error", "-xerror", "-i");
+            assertThat(request.command()).endsWith("-map", "0:v?", "-map", "0:a?", "-f", "null", "-");
+        });
+        assertThat(children(workRoot)).isEmpty();
+    }
+
+    @Test
+    void returnsProbeDurationFactsAcrossThe250MillisecondMetadataBoundary() throws Exception {
+        byte[] content = "base-video".getBytes(StandardCharsets.UTF_8);
+        for (long metadataDuration : List.of(2_750L, 2_749L)) {
+            CreationAssetResolveDTO metadata = new CreationAssetResolveDTO("1", "video/mp4", sha256(content),
+                CreationAssetType.VIDEO, null, content.length, metadataDuration, 1080, 1920,
+                false, false, CreationAssetUsageOrigin.TIMELINE_RENDER_OUTPUT);
+
+            TimelineMediaQualityInspectionDTO result = service(512L * 1024L, ignored -> { })
+                .inspectQuality(new CountingHandle(metadata, content));
+
+            assertThat(result.fullyDecoded()).isTrue();
+            assertThat(result.probe().durationMs()).isEqualTo(3_000L);
+            assertThat(result.probe().width()).isEqualTo(320);
+            assertThat(result.probe().height()).isEqualTo(180);
+        }
+        assertThat(processExecutor.requests).hasSize(2);
+        assertThat(children(workRoot)).isEmpty();
+    }
+
+    @Test
+    void mapsFullDecodeFailureToSafeProcessErrorAndCleansWork() throws Exception {
+        byte[] content = "base-video".getBytes(StandardCharsets.UTF_8);
+        CreationAssetResolveDTO metadata = new CreationAssetResolveDTO("1", "video/mp4", sha256(content),
+            CreationAssetType.VIDEO, null, content.length, 3_000L, null, null,
+            false, false, CreationAssetUsageOrigin.TIMELINE_RENDER_OUTPUT);
+        CountingHandle handle = new CountingHandle(metadata, content);
+        processExecutor.nextStatus = TimelineProcessResult.Status.NON_ZERO_EXIT;
+
+        assertThatThrownBy(() -> service(512L * 1024L, ignored -> { }).inspectQuality(handle))
+            .isInstanceOfSatisfying(TimelineExecutionException.class, exception -> {
+                assertThat(exception.code()).isEqualTo(TimelineExecutionFailureCode.PROCESS_FAILED);
+                assertThat(exception.getMessage()).isEqualTo("timeline render process failed");
+            });
+
+        assertThat(children(workRoot)).isEmpty();
     }
 
     @Test
@@ -394,7 +458,7 @@ class FfmpegTimelineMediaRenderServiceTest {
         @Override
         public TimelineProcessResult execute(TimelineProcessRequest request, BooleanSupplier cancellationRequested) {
             requests.add(request);
-            if (nextStatus == TimelineProcessResult.Status.SUCCEEDED) {
+            if (nextStatus == TimelineProcessResult.Status.SUCCEEDED && !"-".equals(request.command().getLast())) {
                 Path output = Path.of(request.command().getLast());
                 try {
                     Files.write(output, output.getFileName().toString().startsWith("pip-")

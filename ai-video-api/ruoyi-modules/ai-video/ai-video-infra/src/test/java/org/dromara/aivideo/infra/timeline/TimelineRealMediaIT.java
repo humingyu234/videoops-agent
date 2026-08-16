@@ -2,6 +2,7 @@ package org.dromara.aivideo.infra.timeline;
 
 import org.dromara.aivideo.creation.dto.CreationAssetResolveDTO;
 import org.dromara.aivideo.creation.enums.CreationAssetType;
+import org.dromara.aivideo.creation.enums.CreationAssetUsageOrigin;
 import org.dromara.aivideo.creation.service.CreationMediaHandle;
 import org.dromara.aivideo.infra.timeline.path.TimelinePathGuard;
 import org.dromara.aivideo.infra.timeline.probe.FfprobeClient;
@@ -13,6 +14,7 @@ import org.dromara.aivideo.infra.timeline.render.FfmpegTimelineMediaRenderServic
 import org.dromara.aivideo.timeline.dto.TimelineAssetReferenceDTO;
 import org.dromara.aivideo.timeline.dto.TimelineDocumentDTO;
 import org.dromara.aivideo.timeline.dto.TimelineMediaProbeDTO;
+import org.dromara.aivideo.timeline.dto.TimelineMediaQualityInspectionDTO;
 import org.dromara.aivideo.timeline.dto.TimelineOutputConfigDTO;
 import org.dromara.aivideo.timeline.dto.TimelineRenderCommandDTO;
 import org.dromara.aivideo.timeline.dto.TimelineRenderResultDTO;
@@ -51,6 +53,31 @@ class TimelineRealMediaIT {
 
     @TempDir
     Path temporaryDirectory;
+
+    @Test
+    void fullyDecodesOneCheckedInFinalVideo() throws Exception {
+        Path ffmpeg = requiredExecutable("AIVIDEO_TIMELINE_FFMPEG_PATH");
+        Path ffprobe = requiredExecutable("AIVIDEO_TIMELINE_FFPROBE_PATH");
+        Path workRoot = Files.createDirectories(temporaryDirectory.resolve("quality-work"));
+        FfmpegTimelineMediaRenderService renderer = new FfmpegTimelineMediaRenderService(
+            properties(ffmpeg, ffprobe, workRoot));
+        Path finalVideo = resource("base-with-audio.mp4");
+        CreationAssetResolveDTO metadata = new CreationAssetResolveDTO("90071992547410999", "video/mp4",
+            sha256(finalVideo), CreationAssetType.VIDEO, null, Files.size(finalVideo), 2_749L,
+            null, null, false, false, CreationAssetUsageOrigin.TIMELINE_RENDER_OUTPUT);
+
+        try (FileHandle handle = new FileHandle(finalVideo, metadata)) {
+            TimelineMediaQualityInspectionDTO result = renderer.inspectQuality(handle);
+
+            assertThat(result.fullyDecoded()).isTrue();
+            assertThat(result.probe().durationMs()).isEqualTo(3_000L);
+            assertThat(result.probe().videoCodec()).isEqualTo("h264");
+            assertThat(result.probe().audioCodec()).isEqualTo("aac");
+        }
+        try (var files = Files.list(workRoot)) {
+            assertThat(files.toList()).isEmpty();
+        }
+    }
 
     @Test
     void rendersCheckedInMediaWithAllTimelineElementTypesAndVerifiesOutputFacts() throws Exception {

@@ -2,6 +2,7 @@ package org.dromara.aivideo.infra.timeline.render;
 
 import org.dromara.aivideo.creation.dto.CreationAssetResolveDTO;
 import org.dromara.aivideo.creation.enums.CreationAssetType;
+import org.dromara.aivideo.creation.enums.CreationAssetUsageOrigin;
 import org.dromara.aivideo.creation.service.CreationMediaHandle;
 import org.dromara.aivideo.infra.timeline.TimelineInfrastructureProperties;
 import org.dromara.aivideo.infra.timeline.ass.TimelineFontMeasurer;
@@ -15,6 +16,7 @@ import org.dromara.aivideo.infra.timeline.process.TimelineProcessResult;
 import org.dromara.aivideo.task.enums.AiTaskStage;
 import org.dromara.aivideo.timeline.constant.TimelineContractLimits;
 import org.dromara.aivideo.timeline.dto.TimelineMediaProbeDTO;
+import org.dromara.aivideo.timeline.dto.TimelineMediaQualityInspectionDTO;
 import org.dromara.aivideo.timeline.dto.TimelineElementDTO;
 import org.dromara.aivideo.timeline.dto.TimelineFancyTextElementDTO;
 import org.dromara.aivideo.timeline.dto.TimelineProgressDTO;
@@ -76,6 +78,12 @@ public final class FfmpegTimelineMediaRenderService implements ITimelineMediaRen
     private static final int OUTPUT_FRAME_RATE = limit("outputFrameRate");
     private static final long OUTPUT_DURATION_TOLERANCE_MS = 100L;
     private static final int MAX_GENERATED_SCRIPT_BYTES = 256 * 1024;
+    private static final long PROCESS_OUTPUT_LIMIT_BYTES = 1024L * 1024L;
+    private static final Map<String, String> PROCESS_ENVIRONMENT = Map.of(
+        "LANG", "C",
+        "LC_ALL", "C",
+        "TZ", "UTC"
+    );
     private static final String FONT_REGISTRY_FILE = "font-registry.json";
     private static final String FONT_REGISTRY_SHA256 = "2e0198557dc5a00c4cdde6eb970a3c2282c298f169c3f6bd7349c275156a9e33";
     private static final Map<String, String> REQUIRED_FONT_HASHES = Map.of(
@@ -141,7 +149,16 @@ public final class FfmpegTimelineMediaRenderService implements ITimelineMediaRen
 
     @Override
     public TimelineMediaProbeDTO probe(CreationMediaHandle input) {
-        CreationAssetResolveDTO metadata = requireMetadata(input);
+        return inspect(input, false).probe();
+    }
+
+    @Override
+    public TimelineMediaQualityInspectionDTO inspectQuality(CreationMediaHandle input) {
+        return inspect(input, true);
+    }
+
+    private TimelineMediaQualityInspectionDTO inspect(CreationMediaHandle input, boolean decodeFully) {
+        CreationAssetResolveDTO metadata = decodeFully ? requireQualityMetadata(input) : requireMetadata(input);
         Path workDirectory = null;
         try {
             workDirectory = createWorkDirectory();
@@ -149,10 +166,21 @@ public final class FfmpegTimelineMediaRenderService implements ITimelineMediaRen
             Path localInput = materialize(input, metadata, alias, workDirectory, () -> false);
             String probeId = "timeline-probe-" + UUID.randomUUID();
             MediaProbe probe = mediaProber.probe(probeId, probeId, metadata, localInput, () -> false);
-            validateStandaloneProbe(metadata, probe);
-            return new TimelineMediaProbeDTO(metadata.assetId(), metadata.assetType().value(), probe.formatName(),
+            if (decodeFully) {
+                validateQualityProbe(metadata, probe);
+            } else {
+                validateStandaloneProbe(metadata, probe);
+            }
+            TimelineMediaProbeDTO facts = new TimelineMediaProbeDTO(metadata.assetId(), metadata.assetType().value(),
+                probe.formatName(),
                 probe.durationMs(), probe.fileSize(), probe.width(), probe.height(), probe.frameRate(),
-                probe.sampleRate(), probe.channels(), probe.videoStream(), probe.audioStream());
+                probe.sampleRate(), probe.channels(), probe.videoStream(), probe.audioStream(), probe.videoCodec(),
+                probe.audioCodec());
+            if (decodeFully) {
+                String decodeId = "timeline-quality-" + UUID.randomUUID();
+                executeFfmpeg(fullDecodeRequest(decodeId, localInput, workDirectory), () -> false);
+            }
+            return new TimelineMediaQualityInspectionDTO(facts, decodeFully);
         } catch (TimelineExecutionException exception) {
             throw exception;
         } catch (CancellationException exception) {
@@ -162,6 +190,15 @@ public final class FfmpegTimelineMediaRenderService implements ITimelineMediaRen
         } finally {
             cleanupQuietly(workDirectory);
         }
+    }
+
+    private TimelineProcessRequest fullDecodeRequest(String decodeId, Path input, Path workDirectory) {
+        List<String> command = List.of(
+            ffmpegBinary.toString(), "-nostdin", "-hide_banner", "-loglevel", "error", "-xerror",
+            "-i", input.toString(), "-map", "0:v?", "-map", "0:a?", "-f", "null", "-"
+        );
+        return new TimelineProcessRequest(decodeId, decodeId, command, workDirectory, PROCESS_ENVIRONMENT,
+            processTimeout, PROCESS_OUTPUT_LIMIT_BYTES, PROCESS_OUTPUT_LIMIT_BYTES);
     }
 
     @Override
@@ -296,6 +333,23 @@ public final class FfmpegTimelineMediaRenderService implements ITimelineMediaRen
     }
 
     private static CreationAssetResolveDTO requireMetadata(CreationMediaHandle input) {
+        CreationAssetResolveDTO metadata = requireCommonMetadata(input);
+        if (metadata.usageType() == null) {
+            throw inputInvalid();
+        }
+        return metadata;
+    }
+
+    private static CreationAssetResolveDTO requireQualityMetadata(CreationMediaHandle input) {
+        CreationAssetResolveDTO metadata = requireCommonMetadata(input);
+        if (metadata.assetType() != CreationAssetType.VIDEO
+            || metadata.usageOrigin() != CreationAssetUsageOrigin.TIMELINE_RENDER_OUTPUT) {
+            throw inputInvalid();
+        }
+        return metadata;
+    }
+
+    private static CreationAssetResolveDTO requireCommonMetadata(CreationMediaHandle input) {
         if (input == null) {
             throw inputInvalid();
         }
@@ -303,7 +357,7 @@ public final class FfmpegTimelineMediaRenderService implements ITimelineMediaRen
             CreationAssetResolveDTO metadata = input.metadata();
             if (metadata == null || metadata.assetId() == null || metadata.assetId().isBlank()
                 || metadata.sha256() == null || !metadata.sha256().matches("[0-9a-f]{64}")
-                || metadata.assetType() == null || metadata.usageType() == null || metadata.sizeBytes() <= 0) {
+                || metadata.assetType() == null || metadata.sizeBytes() <= 0) {
                 throw inputInvalid();
             }
             return metadata;
@@ -439,6 +493,12 @@ public final class FfmpegTimelineMediaRenderService implements ITimelineMediaRen
             case AUDIO -> actual.audioStream();
         };
         if (!requiredStreamPresent) {
+            throw inputInvalid();
+        }
+    }
+
+    private void validateQualityProbe(CreationAssetResolveDTO expected, MediaProbe actual) {
+        if (actual == null || actual.fileSize() != expected.sizeBytes()) {
             throw inputInvalid();
         }
     }
