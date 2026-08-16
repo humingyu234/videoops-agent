@@ -58,7 +58,9 @@ class SubtitleNormalizationServiceImplTest {
         SubtitleNormalizationServiceImpl service = new SubtitleNormalizationServiceImpl(fontMeasurementService);
 
         assertThat(service.normalizeDisplay("欢迎使用 AI 视频！")).isEqualTo("欢迎使用AI视频");
-        assertThat(service.normalizeDisplay("价格 3.14 元。")).isEqualTo("价格314元");
+        assertThat(service.normalizeDisplay("价格 3.14 元。")).isEqualTo("价格3.14元");
+        assertThat(service.normalizeDisplay("现在 12:30 开播。")).isEqualTo("现在12:30开播");
+        assertThat(service.normalizeDisplay("日期 8/16，订单 A-12。")).isEqualTo("日期8/16订单A-12");
         assertThat(service.normalizeDisplay("Cafe\u0301，开始创作。\r\n")).isEqualTo("Café开始创作");
         assertThat(service.normalizeDisplay("效率提升 🚀 50%！")).isEqualTo("效率提升🚀50%");
     }
@@ -87,12 +89,30 @@ class SubtitleNormalizationServiceImplTest {
 
         TimelineSubtitleElementDTO normalized = result.subtitles().getFirst();
         assertThat(normalized.sourceTextSnapshot()).isEqualTo("A🚀 Café， 3.14！");
-        assertThat(normalized.displayText()).isEqualTo("A🚀Café314");
+        assertThat(normalized.displayText()).isEqualTo("A🚀Café3.14");
         assertThat(normalized.sourceStartOffset()).isZero();
         assertThat(normalized.sourceEndOffset()).isEqualTo("A🚀 Café， 3.14！".codePointCount(0, "A🚀 Café， 3.14！".length()));
         assertThat(normalized.startMs()).isZero();
         assertThat(normalized.endMs()).isEqualTo(4_000L);
         assertThat(result.normalizationChanges()).isNotEmpty();
+    }
+
+    @Test
+    void rejectsDisplayTextThatDropsASemanticSeparator() {
+        String script = "价格3.14元";
+        TimelineSubtitleElementDTO source = subtitle("subtitle_0001", script, "价格314元", 0,
+            script.codePointCount(0, script.length()), 0L, 1_000L);
+
+        assertThatThrownBy(() -> new SubtitleNormalizationServiceImpl(fontMeasurementService)
+            .normalize(script, List.of(source), 1080, new BigDecimal("0.05")))
+            .isInstanceOfSatisfying(ServiceException.class, exception -> assertThat(exception.getCode()).isEqualTo(46607));
+
+        String reference = "订单A-12";
+        TimelineSubtitleElementDTO missingHyphen = subtitle("subtitle_0002", reference, "订单A12", 0,
+            reference.codePointCount(0, reference.length()), 0L, 1_000L);
+        assertThatThrownBy(() -> new SubtitleNormalizationServiceImpl(fontMeasurementService)
+            .normalize(reference, List.of(missingHyphen), 1080, new BigDecimal("0.05")))
+            .isInstanceOfSatisfying(ServiceException.class, exception -> assertThat(exception.getCode()).isEqualTo(46607));
     }
 
     @Test
@@ -134,8 +154,13 @@ class SubtitleNormalizationServiceImplTest {
 
     private TimelineSubtitleElementDTO subtitle(String id, String source, int startOffset, int endOffset,
                                                  long startMs, long endMs) {
+        return subtitle(id, source, source, startOffset, endOffset, startMs, endMs);
+    }
+
+    private TimelineSubtitleElementDTO subtitle(String id, String source, String display, int startOffset,
+                                                 int endOffset, long startMs, long endMs) {
         return new TimelineSubtitleElementDTO(id, TimelineElementType.SUBTITLE, startMs, endMs, 1,
-            true, false, "subtitle", source, source, startOffset, endOffset,
+            true, false, "subtitle", source, display, startOffset, endOffset,
             "noto_sans_cjk_sc_regular", "client", "client", 48, "#FFFFFFFF",
             false, null, false, null, 0, "lower", "center");
     }

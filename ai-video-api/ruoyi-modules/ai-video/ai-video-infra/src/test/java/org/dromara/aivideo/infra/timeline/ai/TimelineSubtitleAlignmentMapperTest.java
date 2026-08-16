@@ -36,9 +36,28 @@ class TimelineSubtitleAlignmentMapperTest {
             .isInstanceOf(TimelineExecutionException.class);
     }
 
+    @Test
+    void preservesNumericSemanticSeparatorsAndRejectsCuesThatDropThem() {
+        TimelineSubtitleAlignmentResultDTO result = mapper.mapTrusted(command("价格3.14元，12:30开播。", List.of(
+            new TimelineSubtitleAlignmentCommandDTO.TrustedCue("价格 3.14 元，", 0, 300),
+            new TimelineSubtitleAlignmentCommandDTO.TrustedCue("12:30 开播。", 300, 700))));
+
+        assertThat(result.subtitles()).containsExactly(
+            new TimelineSubtitleAlignmentResultDTO.AlignedSubtitle(0, 7, "价格3.14元", 0, 300),
+            new TimelineSubtitleAlignmentResultDTO.AlignedSubtitle(7, 14, "12:30开播", 300, 700));
+        assertThatThrownBy(() -> mapper.mapTrusted(command("价格3.14元", List.of(
+            new TimelineSubtitleAlignmentCommandDTO.TrustedCue("价格314元", 0, 300)))))
+            .isInstanceOf(TimelineExecutionException.class);
+    }
+
     private static TimelineSubtitleAlignmentCommandDTO command(
         List<TimelineSubtitleAlignmentCommandDTO.TrustedCue> cues) {
+        return command("你好，世界！", cues);
+    }
+
+    private static TimelineSubtitleAlignmentCommandDTO command(String script,
+        List<TimelineSubtitleAlignmentCommandDTO.TrustedCue> cues) {
         return new TimelineSubtitleAlignmentCommandDTO(
-            "task-1", "project-1", "revision-1", "audio-1", "你好，世界！", "zh", cues);
+            "task-1", "project-1", "revision-1", "audio-1", script, "zh", cues);
     }
 }

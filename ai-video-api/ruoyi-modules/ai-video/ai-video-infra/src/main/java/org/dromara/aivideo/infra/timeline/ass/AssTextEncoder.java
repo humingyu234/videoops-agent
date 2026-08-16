@@ -2,6 +2,7 @@ package org.dromara.aivideo.infra.timeline.ass;
 
 import org.dromara.aivideo.timeline.constant.TimelineContractLimits;
 import org.dromara.aivideo.timeline.dto.TimelineSubtitleElementDTO;
+import org.dromara.aivideo.timeline.service.SubtitleDisplayNormalizer;
 
 import java.text.Normalizer;
 import java.util.Objects;
@@ -64,17 +65,12 @@ public final class AssTextEncoder {
         if (codePointCount < 1 || codePointCount > MAX_SUBTITLE_CODE_POINTS) {
             throw invalidText();
         }
-        StringBuilder result = new StringBuilder(normalized.length());
-        normalized.codePoints().forEach(codePoint -> {
-            requireSafeSourceCodePoint(codePoint);
-            if (!isSourceWhitespace(codePoint) && !isUnicodePunctuation(codePoint)) {
-                result.appendCodePoint(codePoint);
-            }
-        });
+        normalized.codePoints().forEach(AssTextEncoder::requireSafeSourceCodePoint);
+        String result = SubtitleDisplayNormalizer.normalize(normalized);
         if (result.isEmpty()) {
             throw invalidText();
         }
-        return result.toString();
+        return result;
     }
 
     /**
@@ -145,27 +141,8 @@ public final class AssTextEncoder {
         return Character.isWhitespace(codePoint) || Character.isSpaceChar(codePoint);
     }
 
-    private static boolean isLineTerminator(int codePoint) {
-        return codePoint == '\r' || codePoint == '\n' || codePoint == 0x0085 || codePoint == 0x2028
-            || codePoint == 0x2029;
-    }
-
-    private static boolean isSourceWhitespace(int codePoint) {
-        return isWhitespace(codePoint) || isLineTerminator(codePoint);
-    }
-
-    private static boolean isUnicodePunctuation(int codePoint) {
-        return switch (Character.getType(codePoint)) {
-            case Character.CONNECTOR_PUNCTUATION, Character.DASH_PUNCTUATION,
-                 Character.START_PUNCTUATION, Character.END_PUNCTUATION,
-                 Character.INITIAL_QUOTE_PUNCTUATION, Character.FINAL_QUOTE_PUNCTUATION,
-                 Character.OTHER_PUNCTUATION -> true;
-            default -> false;
-        };
-    }
-
     private static boolean isNormalizedSubtitleDisplay(String displayText) {
-        return displayText.codePoints().noneMatch(codePoint -> isWhitespace(codePoint) || isUnicodePunctuation(codePoint));
+        return SubtitleDisplayNormalizer.normalize(displayText).equals(displayText);
     }
 
     private static String escapeAssLiteral(String value) {

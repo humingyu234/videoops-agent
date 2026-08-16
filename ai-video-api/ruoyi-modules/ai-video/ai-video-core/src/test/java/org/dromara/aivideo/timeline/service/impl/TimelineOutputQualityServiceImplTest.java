@@ -9,6 +9,7 @@ import org.dromara.aivideo.creation.mapper.CreationProjectMapper;
 import org.dromara.aivideo.creation.service.CreationMediaHandle;
 import org.dromara.aivideo.creation.service.ICreationAssetService;
 import org.dromara.aivideo.task.dto.AiTaskDTO;
+import org.dromara.aivideo.timeline.constant.TimelineErrorCodes;
 import org.dromara.aivideo.timeline.domain.TimelineVersion;
 import org.dromara.aivideo.timeline.dto.TimelineCanvasDTO;
 import org.dromara.aivideo.timeline.dto.TimelineDocumentDTO;
@@ -18,8 +19,10 @@ import org.dromara.aivideo.timeline.dto.TimelineOutputQualityDTO;
 import org.dromara.aivideo.timeline.dto.TimelineSubtitleElementDTO;
 import org.dromara.aivideo.timeline.dto.TimelineTrackDTO;
 import org.dromara.aivideo.timeline.enums.TimelineElementType;
+import org.dromara.aivideo.timeline.enums.TimelineExecutionFailureCode;
 import org.dromara.aivideo.timeline.enums.TimelineTrackArea;
 import org.dromara.aivideo.timeline.enums.TimelineTrackType;
+import org.dromara.aivideo.timeline.exception.TimelineExecutionException;
 import org.dromara.aivideo.timeline.mapper.TimelineVersionMapper;
 import org.dromara.aivideo.timeline.service.ITimelineMediaRenderService;
 import org.dromara.common.core.exception.ServiceException;
@@ -154,15 +157,58 @@ class TimelineOutputQualityServiceImplTest {
     }
 
     @Test
-    void emitsPlayableFailureAndReviewsOtherMediaFactsWhenOpeningOrDecodingThrows() {
-        when(mediaRenderService.inspectQuality(mediaHandle)).thenThrow(new IllegalStateException("private path"));
+    void reviewsAllMediaFactsWhenStorageIsUnavailable() {
+        when(assetService.openOwnedTimelineRenderOutput(ACTOR_ID, "201", "401"))
+            .thenThrow(new ServiceException("private storage endpoint"));
+
+        TimelineOutputQualityDTO result = service().evaluate(ACTOR_ID, task(), asset());
+
+        assertThat(result.criteria().subList(0, 5))
+            .allMatch(item -> item.verdict() == TimelineOutputQualityDTO.Verdict.REVIEW
+                && item.confidence() == TimelineOutputQualityDTO.Confidence.LOW);
+        assertThat(result.criteria().subList(0, 5).toString()).doesNotContain("private storage endpoint");
+    }
+
+    @Test
+    void reviewsAllMediaFactsForDisabledRendererAndInfrastructureTimeout() {
+        when(mediaRenderService.inspectQuality(mediaHandle))
+            .thenThrow(new ServiceException("disabled", TimelineErrorCodes.TIMELINE_RENDER_UNAVAILABLE))
+            .thenThrow(new TimelineExecutionException("inspection timeout", TimelineExecutionFailureCode.TIMEOUT,
+                true, null))
+            .thenThrow(new TimelineExecutionException("process unavailable",
+                TimelineExecutionFailureCode.PROCESS_FAILED, true, null));
+
+        TimelineOutputQualityDTO disabled = service().evaluate(ACTOR_ID, task(), asset());
+        TimelineOutputQualityDTO timeout = service().evaluate(ACTOR_ID, task(), asset());
+        TimelineOutputQualityDTO processUnavailable = service().evaluate(ACTOR_ID, task(), asset());
+
+        assertThat(disabled.criteria().subList(0, 5))
+            .allMatch(item -> item.verdict() == TimelineOutputQualityDTO.Verdict.REVIEW
+                && item.confidence() == TimelineOutputQualityDTO.Confidence.LOW);
+        assertThat(timeout.criteria().subList(0, 5))
+            .allMatch(item -> item.verdict() == TimelineOutputQualityDTO.Verdict.REVIEW
+                && item.confidence() == TimelineOutputQualityDTO.Confidence.LOW);
+        assertThat(processUnavailable.criteria().subList(0, 5))
+            .allMatch(item -> item.verdict() == TimelineOutputQualityDTO.Verdict.REVIEW
+                && item.confidence() == TimelineOutputQualityDTO.Confidence.LOW);
+        assertThat(disabled.criteria().subList(0, 5).toString()).doesNotContain("disabled");
+        assertThat(timeout.criteria().subList(0, 5).toString()).doesNotContain("inspection timeout");
+        assertThat(processUnavailable.criteria().subList(0, 5).toString()).doesNotContain("process unavailable");
+    }
+
+    @Test
+    void failsPlayableOnlyWhenInspectionConfirmsInvalidMediaContent() {
+        when(mediaRenderService.inspectQuality(mediaHandle)).thenThrow(new TimelineExecutionException(
+            "private damaged media detail", TimelineExecutionFailureCode.INPUT_INVALID, false, null));
 
         TimelineOutputQualityDTO result = service().evaluate(ACTOR_ID, task(), asset());
 
         assertThat(criterion(result, "media.playable").verdict()).isEqualTo(TimelineOutputQualityDTO.Verdict.FAIL);
+        assertThat(criterion(result, "media.playable").confidence()).isEqualTo(TimelineOutputQualityDTO.Confidence.HIGH);
         assertThat(result.criteria().subList(1, 5))
-            .allMatch(item -> item.verdict() == TimelineOutputQualityDTO.Verdict.REVIEW);
-        assertThat(result.criteria().subList(0, 5).toString()).doesNotContain("private path");
+            .allMatch(item -> item.verdict() == TimelineOutputQualityDTO.Verdict.REVIEW
+                && item.confidence() == TimelineOutputQualityDTO.Confidence.LOW);
+        assertThat(result.criteria().subList(0, 5).toString()).doesNotContain("private damaged media detail");
     }
 
     @Test
@@ -222,6 +268,38 @@ class TimelineOutputQualityServiceImplTest {
         TimelineOutputQualityDTO changed = service().evaluate(ACTOR_ID, task(), asset());
         assertThat(criterion(changed, "subtitle.text_integrity").verdict())
             .isEqualTo(TimelineOutputQualityDTO.Verdict.FAIL);
+    }
+
+    @Test
+    void rejectsRemovedSemanticPunctuationWhileAllowingSentencePunctuation() throws Exception {
+        project = project("价格3.14元。");
+        version = version(timeline(new BigDecimal("0.05"),
+            subtitle("s1", 0, 1_000, 0, 8, "价格3.14元。", "价格314元")));
+        assertThat(criterion(service().evaluate(ACTOR_ID, task(), asset()), "subtitle.text_integrity").verdict())
+            .isEqualTo(TimelineOutputQualityDTO.Verdict.FAIL);
+
+        project = project("日期8/16。");
+        version = version(timeline(new BigDecimal("0.05"),
+            subtitle("s1", 0, 1_000, 0, 7, "日期8/16。", "日期816")));
+        assertThat(criterion(service().evaluate(ACTOR_ID, task(), asset()), "subtitle.text_integrity").verdict())
+            .isEqualTo(TimelineOutputQualityDTO.Verdict.FAIL);
+
+        project = project("订单A-12。");
+        version = version(timeline(new BigDecimal("0.05"),
+            subtitle("s1", 0, 1_000, 0, 7, "订单A-12。", "订单A12")));
+        assertThat(criterion(service().evaluate(ACTOR_ID, task(), asset()), "subtitle.text_integrity").verdict())
+            .isEqualTo(TimelineOutputQualityDTO.Verdict.FAIL);
+
+        project = project("时间12:30。");
+        version = version(timeline(new BigDecimal("0.05"),
+            subtitle("s1", 0, 1_000, 0, 8, "时间12:30。", "时间1230")));
+        assertThat(criterion(service().evaluate(ACTOR_ID, task(), asset()), "subtitle.text_integrity").verdict())
+            .isEqualTo(TimelineOutputQualityDTO.Verdict.FAIL);
+
+        version = version(timeline(new BigDecimal("0.05"),
+            subtitle("s1", 0, 1_000, 0, 8, "时间12:30。", " 时间 12:30！")));
+        assertThat(criterion(service().evaluate(ACTOR_ID, task(), asset()), "subtitle.text_integrity").verdict())
+            .isEqualTo(TimelineOutputQualityDTO.Verdict.PASS);
     }
 
     @Test

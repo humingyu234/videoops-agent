@@ -6,6 +6,7 @@ import org.dromara.aivideo.timeline.dto.TimelineNormalizationChangeDTO;
 import org.dromara.aivideo.timeline.dto.TimelineSubtitleElementDTO;
 import org.dromara.aivideo.timeline.service.ISubtitleFontMeasurementService;
 import org.dromara.aivideo.timeline.service.ISubtitleNormalizationService;
+import org.dromara.aivideo.timeline.service.SubtitleDisplayNormalizer;
 import org.dromara.common.core.exception.ServiceException;
 import org.springframework.stereotype.Service;
 
@@ -20,7 +21,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 
-/** C0 subtitle normalization: NFC, punctuation/whitespace removal, then server font layout. */
+/** C0 subtitle normalization: NFC, display-only punctuation/whitespace removal, then server font layout. */
 @Service
 public class SubtitleNormalizationServiceImpl implements ISubtitleNormalizationService {
 
@@ -97,14 +98,7 @@ public class SubtitleNormalizationServiceImpl implements ISubtitleNormalizationS
 
     /** Exposed for C0 fixture tests; persistence always calls {@link #normalize}. */
     public String normalizeDisplay(String text) {
-        String nfc = Normalizer.normalize(nullToEmpty(text), Normalizer.Form.NFC);
-        StringBuilder result = new StringBuilder(nfc.length());
-        nfc.codePoints().forEach(codePoint -> {
-            if (!Character.isWhitespace(codePoint) && !isPunctuation(codePoint)) {
-                result.appendCodePoint(codePoint);
-            }
-        });
-        return result.toString();
+        return SubtitleDisplayNormalizer.normalize(text);
     }
 
     private List<TimelineSubtitleElementDTO> split(TimelineSubtitleElementDTO original, String script,
@@ -169,29 +163,7 @@ public class SubtitleNormalizationServiceImpl implements ISubtitleNormalizationS
     }
 
     private List<Integer> visibleOffsets(String source) {
-        String nfc = Normalizer.normalize(source, Normalizer.Form.NFC);
-        List<Integer> offsets = new ArrayList<>();
-        int index = 0;
-        for (int codePoint : nfc.codePoints().toArray()) {
-            if (!Character.isWhitespace(codePoint) && !isPunctuation(codePoint)) {
-                offsets.add(index);
-            }
-            index++;
-        }
-        return offsets;
-    }
-
-    private boolean isPunctuation(int codePoint) {
-        if (codePoint == '%') {
-            return false;
-        }
-        return switch (Character.getType(codePoint)) {
-            case Character.CONNECTOR_PUNCTUATION, Character.DASH_PUNCTUATION,
-                Character.START_PUNCTUATION, Character.END_PUNCTUATION,
-                Character.INITIAL_QUOTE_PUNCTUATION, Character.FINAL_QUOTE_PUNCTUATION,
-                Character.OTHER_PUNCTUATION -> true;
-            default -> false;
-        };
+        return SubtitleDisplayNormalizer.visibleSourceOffsets(source);
     }
 
     private int codePointCount(String value) {

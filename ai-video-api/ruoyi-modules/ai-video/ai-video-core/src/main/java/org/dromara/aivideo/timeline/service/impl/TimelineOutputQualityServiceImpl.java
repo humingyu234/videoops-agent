@@ -17,10 +17,13 @@ import org.dromara.aivideo.timeline.dto.TimelineMediaProbeDTO;
 import org.dromara.aivideo.timeline.dto.TimelineMediaQualityInspectionDTO;
 import org.dromara.aivideo.timeline.dto.TimelineOutputQualityDTO;
 import org.dromara.aivideo.timeline.dto.TimelineSubtitleElementDTO;
+import org.dromara.aivideo.timeline.enums.TimelineExecutionFailureCode;
 import org.dromara.aivideo.timeline.enums.TimelineTrackType;
+import org.dromara.aivideo.timeline.exception.TimelineExecutionException;
 import org.dromara.aivideo.timeline.mapper.TimelineVersionMapper;
 import org.dromara.aivideo.timeline.service.ITimelineMediaRenderService;
 import org.dromara.aivideo.timeline.service.ITimelineOutputQualityService;
+import org.dromara.aivideo.timeline.service.SubtitleDisplayNormalizer;
 import org.dromara.common.core.exception.ServiceException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
@@ -179,19 +182,19 @@ public class TimelineOutputQualityServiceImpl implements ITimelineOutputQualityS
         try (CreationMediaHandle media = assetService.openOwnedTimelineRenderOutput(actorId, task.taskId(),
             context.asset().assetId())) {
             inspection = mediaRenderService.inspectQuality(media);
+        } catch (TimelineExecutionException exception) {
+            if (exception.code() == TimelineExecutionFailureCode.INPUT_INVALID) {
+                return mediaInvalid("media_content_invalid");
+            }
+            return mediaUnavailable("media_inspection_unavailable");
+        } catch (ServiceException exception) {
+            return mediaUnavailable(Objects.equals(exception.getCode(), TimelineErrorCodes.TIMELINE_RENDER_UNAVAILABLE)
+                ? "renderer_unavailable" : "media_access_unavailable");
         } catch (Exception exception) {
-            List<TimelineOutputQualityDTO.Criterion> criteria = new ArrayList<>(5);
-            criteria.add(criterion("media.playable", MEDIA, MEDIA_RULE_VERSION, FAIL, HIGH,
-                evidence("reason", "media_open_or_decode_failed")));
-            criteria.addAll(mediaUnavailable("media_facts_unavailable").subList(1, 5));
-            return criteria;
+            return mediaUnavailable("media_inspection_unavailable");
         }
         if (inspection == null || inspection.probe() == null) {
-            List<TimelineOutputQualityDTO.Criterion> criteria = new ArrayList<>(5);
-            criteria.add(criterion("media.playable", MEDIA, MEDIA_RULE_VERSION, FAIL, HIGH,
-                evidence("reason", "media_inspection_invalid")));
-            criteria.addAll(mediaUnavailable("media_facts_unavailable").subList(1, 5));
-            return criteria;
+            return mediaUnavailable("media_inspection_unavailable");
         }
         TimelineMediaProbeDTO probe = inspection.probe();
         TimelineDocumentDTO timeline = context.timeline();
@@ -363,6 +366,13 @@ public class TimelineOutputQualityServiceImpl implements ITimelineOutputQualityS
         );
     }
 
+    private List<TimelineOutputQualityDTO.Criterion> mediaInvalid(String reason) {
+        List<TimelineOutputQualityDTO.Criterion> criteria = new ArrayList<>(mediaUnavailable("media_facts_unavailable"));
+        criteria.set(0, criterion("media.playable", MEDIA, MEDIA_RULE_VERSION, FAIL, HIGH,
+            evidence("reason", reason)));
+        return List.copyOf(criteria);
+    }
+
     private TimelineOutputQualityDTO.Criterion mediaReview(String code, String reason) {
         return criterion(code, MEDIA, MEDIA_RULE_VERSION, REVIEW, LOW, evidence("reason", reason));
     }
@@ -404,27 +414,7 @@ public class TimelineOutputQualityServiceImpl implements ITimelineOutputQualityS
     }
 
     private String normalizeDisplay(String value) {
-        String nfc = nfc(value);
-        StringBuilder result = new StringBuilder(nfc.length());
-        nfc.codePoints().forEach(codePoint -> {
-            if (!Character.isWhitespace(codePoint) && !isPunctuation(codePoint)) {
-                result.appendCodePoint(codePoint);
-            }
-        });
-        return result.toString();
-    }
-
-    private boolean isPunctuation(int codePoint) {
-        if (codePoint == '%') {
-            return false;
-        }
-        return switch (Character.getType(codePoint)) {
-            case Character.CONNECTOR_PUNCTUATION, Character.DASH_PUNCTUATION,
-                Character.START_PUNCTUATION, Character.END_PUNCTUATION,
-                Character.INITIAL_QUOTE_PUNCTUATION, Character.FINAL_QUOTE_PUNCTUATION,
-                Character.OTHER_PUNCTUATION -> true;
-            default -> false;
-        };
+        return SubtitleDisplayNormalizer.normalize(value);
     }
 
     private String codePointSubstring(String value, int start, int end) {

@@ -178,7 +178,7 @@ public final class FfmpegTimelineMediaRenderService implements ITimelineMediaRen
                 probe.audioCodec());
             if (decodeFully) {
                 String decodeId = "timeline-quality-" + UUID.randomUUID();
-                executeFfmpeg(fullDecodeRequest(decodeId, localInput, workDirectory), () -> false);
+                executeQualityDecode(fullDecodeRequest(decodeId, localInput, workDirectory));
             }
             return new TimelineMediaQualityInspectionDTO(facts, decodeFully);
         } catch (TimelineExecutionException exception) {
@@ -623,6 +623,16 @@ public final class FfmpegTimelineMediaRenderService implements ITimelineMediaRen
     }
 
     private void executeFfmpeg(TimelineProcessRequest request, BooleanSupplier cancellationRequested) {
+        executeFfmpeg(request, cancellationRequested, processFailed());
+    }
+
+    private void executeQualityDecode(TimelineProcessRequest request) {
+        executeFfmpeg(request, () -> false, inputInvalid());
+    }
+
+    private void executeFfmpeg(TimelineProcessRequest request,
+                               BooleanSupplier cancellationRequested,
+                               TimelineExecutionException nonZeroFailure) {
         checkCancelled(cancellationRequested);
         TimelineProcessResult result;
         try {
@@ -644,7 +654,8 @@ public final class FfmpegTimelineMediaRenderService implements ITimelineMediaRen
             }
             case CANCELLED -> throw cancelled();
             case TIMED_OUT -> throw timeout();
-            case NON_ZERO_EXIT, OUTPUT_LIMIT_EXCEEDED, START_FAILED, PROCESS_FAILED -> throw processFailed();
+            case NON_ZERO_EXIT -> throw nonZeroFailure;
+            case OUTPUT_LIMIT_EXCEEDED, START_FAILED, PROCESS_FAILED -> throw processFailed();
         }
     }
 

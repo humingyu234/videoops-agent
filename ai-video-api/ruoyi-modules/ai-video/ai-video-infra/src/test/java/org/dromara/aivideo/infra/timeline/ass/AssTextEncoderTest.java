@@ -46,11 +46,13 @@ class AssTextEncoderTest {
     @Test
     void normalizesFrozenSubtitleSourceWithTheC0PunctuationAndWhitespaceRules() {
         assertThat(AssTextEncoder.normalizeSubtitleSource("\u4EF7\r\n\u683C\t\u30003.14\u0085\u00A0\u5143\u3002"))
-            .isEqualTo("\u4EF7\u683C314\u5143");
+            .isEqualTo("\u4EF7\u683C3.14\u5143");
+        assertThat(AssTextEncoder.normalizeSubtitleSource("\u73B0\u5728 12:30 \u5F00\u64AD\u3002"))
+            .isEqualTo("\u73B0\u572812:30\u5F00\u64AD");
         assertThat(AssTextEncoder.normalizeSubtitleSource("Cafe\u0301\uFF0C \u5F00\u59CB\u521B\u4F5C\u3002"))
             .isEqualTo("Caf\u00E9\u5F00\u59CB\u521B\u4F5C");
         assertThat(AssTextEncoder.normalizeSubtitleSource("\u6548\u7387 \u63D0\u5347 \uD83D\uDE80 50%\uFF01"))
-            .isEqualTo("\u6548\u7387\u63D0\u5347\uD83D\uDE8050");
+            .isEqualTo("\u6548\u7387\u63D0\u5347\uD83D\uDE8050%");
     }
 
     private static JsonNode maliciousText() throws Exception {

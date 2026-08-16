@@ -67,12 +67,17 @@ class AssScriptWriterTest {
     }
 
     @Test
-    void rejectsSubtitleDisplayTextThatDoesNotEqualTheFrozenNormalizedSource() {
-        TimelineSubtitleElementDTO mismatched = new TimelineSubtitleElementDTO("subtitle-3", TimelineElementType.SUBTITLE,
+    void preservesNumericSemanticSeparatorsAndRejectsTheirRemovalBeforeWritingAss() {
+        TimelineSubtitleElementDTO preserved = new TimelineSubtitleElementDTO("subtitle-3", TimelineElementType.SUBTITLE,
             0, 1_000, 1, true, false, "label", "\u4EF7\u683C 3.14 \u5143\u3002", "\u4EF7\u683C3.14\u5143", 0, 1,
             "noto_sans_cjk_sc_regular", "2.004", SANS_SHA, 48, "#FFFFFFFF", false, null, false, null, 0, "lower",
             "center");
+        TimelineSubtitleElementDTO mismatched = new TimelineSubtitleElementDTO("subtitle-4", TimelineElementType.SUBTITLE,
+            0, 1_000, 1, true, false, "label", "\u4EF7\u683C 3.14 \u5143\u3002", "\u4EF7\u683C314\u5143", 0, 1,
+            "noto_sans_cjk_sc_regular", "2.004", SANS_SHA, 48, "#FFFFFFFF", false, null, false, null, 0, "lower",
+            "center");
 
+        assertThat(writer.write(1080, 1920, List.of(preserved), List.of())).contains("\u4EF7\u683C3.14\u5143");
         assertThatThrownBy(() -> writer.write(1080, 1920, List.of(mismatched), List.of()))
             .isInstanceOf(IllegalArgumentException.class);
     }

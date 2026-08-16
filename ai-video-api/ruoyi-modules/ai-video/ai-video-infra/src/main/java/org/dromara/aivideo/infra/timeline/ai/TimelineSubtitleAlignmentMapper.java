@@ -5,6 +5,7 @@ import org.dromara.aivideo.timeline.dto.TimelineSubtitleAlignmentCommandDTO;
 import org.dromara.aivideo.timeline.dto.TimelineSubtitleAlignmentResultDTO;
 import org.dromara.aivideo.timeline.enums.TimelineExecutionFailureCode;
 import org.dromara.aivideo.timeline.exception.TimelineExecutionException;
+import org.dromara.aivideo.timeline.service.SubtitleDisplayNormalizer;
 import org.dromara.aivideo.voice.dto.VoiceTranscriptCueDTO;
 
 import java.text.Normalizer;
@@ -81,17 +82,12 @@ public final class TimelineSubtitleAlignmentMapper {
             || normalized.codePointCount(0, normalized.length()) > maximumCodePoints) {
             throw invalid();
         }
-        StringBuilder result = new StringBuilder(normalized.length());
-        normalized.codePoints().forEach(codePoint -> {
-            requireSafeSourceCodePoint(codePoint);
-            if (!isWhitespace(codePoint) && !isUnicodePunctuation(codePoint)) {
-                result.appendCodePoint(codePoint);
-            }
-        });
+        normalized.codePoints().forEach(TimelineSubtitleAlignmentMapper::requireSafeSourceCodePoint);
+        String result = SubtitleDisplayNormalizer.normalize(normalized);
         if (result.isEmpty()) {
             throw invalid();
         }
-        return result.toString();
+        return result;
     }
 
     private static void requirePairedSurrogates(String value) {
@@ -117,21 +113,6 @@ public final class TimelineSubtitleAlignmentMapper {
             || (codePoint >= 0x2066 && codePoint <= 0x2069)) {
             throw invalid();
         }
-    }
-
-    private static boolean isWhitespace(int codePoint) {
-        return Character.isWhitespace(codePoint) || Character.isSpaceChar(codePoint)
-            || codePoint == 0x0085 || codePoint == 0x2028 || codePoint == 0x2029;
-    }
-
-    private static boolean isUnicodePunctuation(int codePoint) {
-        return switch (Character.getType(codePoint)) {
-            case Character.CONNECTOR_PUNCTUATION, Character.DASH_PUNCTUATION,
-                 Character.START_PUNCTUATION, Character.END_PUNCTUATION,
-                 Character.INITIAL_QUOTE_PUNCTUATION, Character.FINAL_QUOTE_PUNCTUATION,
-                 Character.OTHER_PUNCTUATION -> true;
-            default -> false;
-        };
     }
 
     private static boolean isBlank(String value) {

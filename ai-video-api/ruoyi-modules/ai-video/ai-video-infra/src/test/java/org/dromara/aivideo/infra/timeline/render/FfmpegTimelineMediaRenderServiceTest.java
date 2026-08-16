@@ -151,19 +151,26 @@ class FfmpegTimelineMediaRenderServiceTest {
     }
 
     @Test
-    void mapsFullDecodeFailureToSafeProcessErrorAndCleansWork() throws Exception {
+    void distinguishesDamagedFullDecodeFromUnavailableProcessAndCleansWork() throws Exception {
         byte[] content = "base-video".getBytes(StandardCharsets.UTF_8);
         CreationAssetResolveDTO metadata = new CreationAssetResolveDTO("1", "video/mp4", sha256(content),
             CreationAssetType.VIDEO, null, content.length, 3_000L, null, null,
             false, false, CreationAssetUsageOrigin.TIMELINE_RENDER_OUTPUT);
-        CountingHandle handle = new CountingHandle(metadata, content);
         processExecutor.nextStatus = TimelineProcessResult.Status.NON_ZERO_EXIT;
 
-        assertThatThrownBy(() -> service(512L * 1024L, ignored -> { }).inspectQuality(handle))
+        assertThatThrownBy(() -> service(512L * 1024L, ignored -> { })
+            .inspectQuality(new CountingHandle(metadata, content)))
             .isInstanceOfSatisfying(TimelineExecutionException.class, exception -> {
-                assertThat(exception.code()).isEqualTo(TimelineExecutionFailureCode.PROCESS_FAILED);
-                assertThat(exception.getMessage()).isEqualTo("timeline render process failed");
+                assertThat(exception.code()).isEqualTo(TimelineExecutionFailureCode.INPUT_INVALID);
+                assertThat(exception.getMessage()).isEqualTo("timeline render input is invalid");
             });
+        assertThat(children(workRoot)).isEmpty();
+
+        processExecutor.nextStatus = TimelineProcessResult.Status.START_FAILED;
+        assertThatThrownBy(() -> service(512L * 1024L, ignored -> { })
+            .inspectQuality(new CountingHandle(metadata, content)))
+            .isInstanceOfSatisfying(TimelineExecutionException.class, exception ->
+                assertThat(exception.code()).isEqualTo(TimelineExecutionFailureCode.PROCESS_FAILED));
 
         assertThat(children(workRoot)).isEmpty();
     }
