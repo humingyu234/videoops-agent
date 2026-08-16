@@ -1,8 +1,0 @@
-.page { max-width: 1080px; margin: 0 auto; padding: 28px; display: grid; gap: 26px; }
-.hero { border-radius: 18px; }
-.hero :global(.ant-space) { width: 100%; }
-.title { margin: 0 !important; }
-.results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-.emptyResults { grid-column: 1 / -1; display: flex; justify-content: center; }
-.media { width: 100%; max-height: 480px; border-radius: 12px; background: #111; }
-@media (max-width: 760px) { .results { grid-template-columns: 1fr; } }
