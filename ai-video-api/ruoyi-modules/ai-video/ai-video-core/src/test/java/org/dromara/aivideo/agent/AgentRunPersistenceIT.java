@@ -717,9 +717,13 @@ class AgentRunPersistenceIT {
     private void insertDigitalHumanJob(Connection connection, long jobId, long ownerUserId,
                                        String jobType, String status, Long parentJobId) throws SQLException {
         update(connection, """
-            INSERT INTO `%s` (id, owner_user_id, job_type, status, parent_job_id)
-            VALUES (?, ?, ?, ?, ?)
-            """.formatted(table(DH_JOB)), jobId, ownerUserId, jobType, status, parentJobId);
+            INSERT INTO `%s` (
+                id, tenant_id, owner_user_id, job_type, status, stage, progress, parent_job_id,
+                idempotency_key, input_hash, input_media_key, provider
+            ) VALUES (?, 1, ?, ?, ?, 'provider_processing', 30, ?, ?, REPEAT('a', 64), ?, ?)
+            """.formatted(table(DH_JOB)), jobId, ownerUserId, jobType, status, parentJobId,
+            "fixture-" + jobId, jobId + "/input/fixture.bin",
+            "voice_generate".equals(jobType) ? "indextts2" : "comfyui");
     }
 
     private void updateDigitalHumanJob(Connection connection, long jobId, long ownerUserId,
@@ -729,6 +733,33 @@ class AgentRunPersistenceIT {
             SET owner_user_id = ?, job_type = ?, status = ?
             WHERE id = ?
             """.formatted(table(DH_JOB)), ownerUserId, jobType, status, jobId);
+    }
+
+    int expireRunningLease(long ownerUserId, IAgentRunService.AgentRunLease lease) throws SQLException {
+        try (Connection connection = ENV.openMySqlConnection()) {
+            return update(connection, """
+                UPDATE `%s`
+                SET lease_expires_at = DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 1 SECOND)
+                WHERE owner_user_id = ? AND agent_run_id = ? AND run_status = 'running'
+                  AND row_version = ? AND lease_generation = ? AND lease_token_digest = ?
+                  AND waiting_task_source IS NULL AND waiting_task_id IS NULL
+                """.formatted(table(RUN)), ownerUserId, lease.agentRunId(), lease.rowVersion(),
+                lease.leaseGeneration(), sha256(lease.leaseToken()));
+        }
+    }
+
+    long agentRunRowCount() throws SQLException {
+        return fixtureRowCount(RUN);
+    }
+
+    long digitalHumanJobRowCount() throws SQLException {
+        return fixtureRowCount(DH_JOB);
+    }
+
+    private long fixtureRowCount(String key) throws SQLException {
+        try (Connection connection = ENV.openMySqlConnection()) {
+            return rowCount(connection, table(key));
+        }
     }
 
     private void insertCreationProject(Connection connection, long projectId, long ownerUserId,
@@ -900,11 +931,11 @@ class AgentRunPersistenceIT {
         }
     }
 
-    private AnnotationConfigApplicationContext openServiceContext() {
+    AnnotationConfigApplicationContext openServiceContext() {
         return openServiceContext(null);
     }
 
-    private AnnotationConfigApplicationContext openServiceContext(IAgentToolService toolService) {
+    AnnotationConfigApplicationContext openServiceContext(IAgentToolService toolService) {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
         context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("agent-run-persistence-it",
             Map.of(
@@ -931,9 +962,9 @@ class AgentRunPersistenceIT {
         return context;
     }
 
-    private IAgentRunService.AgentRunView createGoldenRun(IAgentRunService service,
-                                                           AppPrincipalSnapshotDTO principal,
-                                                           String keyPrefix) {
+    IAgentRunService.AgentRunView createGoldenRun(IAgentRunService service,
+                                                   AppPrincipalSnapshotDTO principal,
+                                                   String keyPrefix) {
         var brief = service.appendDeliveryBrief(principal, new IAgentRunService.AppendDeliveryBriefCommand(
             null, null, keyPrefix + "-brief", """
             {"startAt":"new","scriptText":"T4 persistence chain","referenceVoiceId":"501",
@@ -949,8 +980,8 @@ class AgentRunPersistenceIT {
             brief.deliveryBriefVersionId(), profile.acceptanceProfileVersionId(), keyPrefix + "-run"));
     }
 
-    private AgentRunOrchestrationDTOs.AdvanceCommand advance(IAgentRunService.AgentRunView run,
-                                                              String workerId) {
+    AgentRunOrchestrationDTOs.AdvanceCommand advance(IAgentRunService.AgentRunView run,
+                                                      String workerId) {
         return new AgentRunOrchestrationDTOs.AdvanceCommand(run.agentRunId(), run.rowVersion(),
             run.contractRevision(), workerId);
     }
@@ -960,7 +991,7 @@ class AgentRunPersistenceIT {
             1L, 1L, 1L, 1L, null);
     }
 
-    private AppPrincipalSnapshotDTO orchestrationPrincipal(long ownerUserId) {
+    AppPrincipalSnapshotDTO orchestrationPrincipal(long ownerUserId) {
         Set<String> permissions = Set.of(
             "aivideo:studio:generate",
             "aivideo:studio:query",
@@ -996,13 +1027,38 @@ class AgentRunPersistenceIT {
         return """
             CREATE TABLE `%s` (
                 id BIGINT NOT NULL,
+                tenant_id BIGINT NOT NULL,
                 owner_user_id BIGINT NOT NULL,
                 job_type VARCHAR(32) NOT NULL,
                 status VARCHAR(16) NOT NULL,
+                stage VARCHAR(40) NOT NULL,
+                progress INT NOT NULL DEFAULT 0,
                 parent_job_id BIGINT NULL,
-                PRIMARY KEY (id)
+                idempotency_key VARCHAR(64) NOT NULL,
+                input_hash CHAR(64) NOT NULL,
+                script_text VARCHAR(1000) NULL,
+                input_media_key VARCHAR(500) NOT NULL,
+                output_media_key VARCHAR(500) NULL,
+                output_media_type VARCHAR(100) NULL,
+                output_media_size BIGINT NULL,
+                output_media_sha256 CHAR(64) NULL,
+                provider VARCHAR(32) NOT NULL,
+                provider_job_id VARCHAR(128) NULL,
+                poll_token VARCHAR(64) NULL,
+                poll_lease_until DATETIME NULL,
+                poll_error_count INT NOT NULL DEFAULT 0,
+                voice_confirmed TINYINT NOT NULL DEFAULT 0,
+                error_code VARCHAR(64) NULL,
+                error_message VARCHAR(255) NULL,
+                create_dept BIGINT NULL,
+                create_by BIGINT NULL,
+                create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                update_by BIGINT NULL,
+                update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uk_%s_idempotency (tenant_id, owner_user_id, job_type, idempotency_key)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-            """.formatted(table(DH_JOB));
+            """.formatted(table(DH_JOB), table(DH_JOB));
     }
 
     private String minimalCreationProjectDdl() {
@@ -1283,7 +1339,10 @@ record AgentRunTestTableNames(Map<String, String> values) {
 }
 
 @Configuration(proxyBeanMethods = false)
-@MapperScan(basePackages = "org.dromara.aivideo.agent.mapper")
+@MapperScan(basePackages = {
+    "org.dromara.aivideo.agent.mapper",
+    "org.dromara.aivideo.digitalhuman.mapper"
+})
 class AgentRunPersistenceConfiguration {
 
     @Bean

@@ -148,7 +148,7 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
             return stop(principal, run.agentRunId(), run.rowVersion(), run.contractRevision(), FAILED,
                 "AGENT_RUN_TIMEOUT", "Agent 执行已达到时间上限");
         }
-        if (run.leaseGeneration() >= contract.policy().maxResumeAttempts()) {
+        if (run.leaseGeneration() > contract.policy().maxResumeAttempts()) {
             return stop(principal, run.agentRunId(), run.rowVersion(), run.contractRevision(), FAILED,
                 "AGENT_RESUME_BUDGET_EXHAUSTED", "Agent 恢复次数已达到上限");
         }

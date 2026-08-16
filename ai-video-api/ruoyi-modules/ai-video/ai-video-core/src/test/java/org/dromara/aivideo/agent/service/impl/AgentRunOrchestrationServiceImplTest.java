@@ -25,6 +25,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -145,6 +146,42 @@ class AgentRunOrchestrationServiceImplTest {
     }
 
     @Test
+    void maxOneAllowsInitialClaimAndFirstFreshRecoveryThenStopsBeforeASecondRecovery() {
+        AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
+        when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(
+            snapshot(run("queued", 0, null, null, 0, NOW.minusSeconds(10), 0),
+                briefNew(), profile(2, 1, 3_600, 1)),
+            snapshot(run("waiting_external_task", 0, "digital_human_generation", 501L, 0,
+                    NOW.minusSeconds(10), 1), briefNew(), profile(2, 1, 3_600, 1)),
+            snapshot(run("waiting_external_task", 0, "digital_human_generation", 501L, 0,
+                    NOW.minusSeconds(10), 2), briefNew(), profile(2, 1, 3_600, 1)));
+        when(runService.claim(eq(principal), any())).thenReturn(
+            lease(null, null), lease("digital_human_generation", 501L));
+        when(toolService.execute(eq(principal), any())).thenReturn(
+            voice("queued", false, false), voice("running", false, false));
+        when(runService.waitForExternalTask(eq(principal), any()))
+            .thenReturn(waiting("digital_human_generation", 501L));
+        when(runService.deferExternalTask(eq(principal), any()))
+            .thenReturn(waiting("digital_human_generation", 501L));
+        when(runService.stopOwnedRun(eq(principal), any())).thenReturn(true);
+
+        AgentRunOrchestrationDTOs.AdvanceResult initial = service().advance(principal, command());
+        AgentRunOrchestrationDTOs.AdvanceResult firstRecovery = service().advance(principal, command());
+        AgentRunOrchestrationDTOs.AdvanceResult exhausted = service().advance(principal, command());
+
+        assertThat(initial.waitingTaskId()).isEqualTo(501L);
+        assertThat(firstRecovery.waitingTaskId()).isEqualTo(501L);
+        assertThat(exhausted.errorCode()).isEqualTo("AGENT_RESUME_BUDGET_EXHAUSTED");
+        verify(runService, times(2)).claim(eq(principal), any());
+        ArgumentCaptor<AgentToolDTOs.Call> calls = ArgumentCaptor.forClass(AgentToolDTOs.Call.class);
+        verify(toolService, times(2)).execute(eq(principal), calls.capture());
+        assertThat(calls.getAllValues()).extracting(AgentToolDTOs.Call::toolName)
+            .containsExactly("submit_voice_generation", "get_generation_status");
+        verify(runService, times(1)).waitForExternalTask(eq(principal), any());
+        verify(runService, times(1)).deferExternalTask(eq(principal), any());
+    }
+
+    @Test
     void successfulWaitingVoiceConfirmsThenSubmitsOneVideoAndAtomicallyAdvances() {
         AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
         when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(snapshot(
@@ -189,7 +226,7 @@ class AgentRunOrchestrationServiceImplTest {
     void exactDeadlineAndResumeBudgetStopBeforeClaimOrTool() {
         AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
         IAgentRunService.AgentRunView deadline = run("queued", 0, null, null, 0, NOW.minusSeconds(60), 0);
-        IAgentRunService.AgentRunView budget = run("queued", 0, null, null, 0, NOW.minusSeconds(1), 3);
+        IAgentRunService.AgentRunView budget = run("queued", 0, null, null, 0, NOW.minusSeconds(1), 4);
         when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(
             snapshot(deadline, briefNew(), profile(2, 1, 60, 3)),
             snapshot(budget, briefNew(), profile(2, 1, 60, 3)));

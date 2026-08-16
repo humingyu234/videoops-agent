@@ -10,9 +10,9 @@
 | 当前详细计划 | `docs/superpowers/plans/2026-08-16-videoops-agent-t4-recoverable-golden-path.md`（当前唯一辅助 runbook） |
 | 状态 | `PAUSED` |
 | 风险等级 | `RED`：持久状态、异步恢复、费用/重试上限与迟到结果属于执行 spine |
-| 当前核对源码 | `branch:main; checkpoint:本提交; T4 base/T3 checkpoint:753666310745bc55657add2d09467ecae0a589a5; T2 checkpoint:a03f5056b0ed2ca0864eb96239da90592bdd88bf; T1 checkpoint:1fe6a92a23e6d8b4f8aa12552f09c1097498ba9e` |
-| 工作区 | 从 clean T3 checkpoint 开工；输入 17 个状态路径（11 tracked + 6 untracked）全部属于 T4 编排、持久窄扩展、迁移/门禁、测试与两份既有状态文档；checkpoint 后应为 clean |
-| 最近有效运行证据 | `T4-E01`：真实 MySQL 5/5、聚焦单元 32/32、当前源码 clean package 与 fat JAR T4 入口核验、bootstrap/规范/diff 门禁全部通过；T4 已按本机/试运行标准完成并暂停 |
+| 当前核对源码 | `branch:main; T4 窄修复 checkpoint:本提交; base:bc7ed68030729e1cba7a4315a5fb1ad9e483b8e0; T3 checkpoint:753666310745bc55657add2d09467ecae0a589a5; T2 checkpoint:a03f5056b0ed2ca0864eb96239da90592bdd88bf; T1 checkpoint:1fe6a92a23e6d8b4f8aa12552f09c1097498ba9e` |
+| 工作区 | 从 clean T4 checkpoint 完成 6 路径窄修复：编排恢复阈值、对应单元、既有持久 IT 夹具、user 模块 test-scope 依赖、单一崩溃窗 IT 与本文件；未新增表、脚本或 runbook；checkpoint 后工作区 clean |
+| 最近有效运行证据 | `T4-E02`：初次 claim 不消耗恢复次数，真实 Tool/资源生成/生成 Service→MySQL 崩溃窗在 fresh instance 以同一幂等键恢复同一根任务；core 5/5、user crash 1/1、聚焦单元 33/33、当前源码 package 与独立审查均通过 |
 | 最后更新 | 2026-08-16（Asia/Shanghai） |
 
 状态只使用 `NOT_STARTED`、`IN_PROGRESS`、`VERIFYING`、`BLOCKED`、`DONE`、`NEEDS_REVALIDATION`、`DEFERRED`、`PAUSED`。`BLOCKED` 仅表示当前范围内已经没有安全动作可继续；`PAUSED` 表示负责人要求在已完成切片后停止，不代表技术阻塞。
@@ -57,7 +57,7 @@
 
 | 步骤 | 状态 | 当前证据或阻塞 | 完成信号 |
 | --- | --- | --- | --- |
-| T4 可恢复黄金链编排 | `DONE` | `T4-E01`：5 个互斥起点生成确定性白名单步骤；缺输入/权限/费用预算在工具调用前阻塞。真实 MySQL 跨 fresh context 完成 voice→video→render→owned ready output，三类提交在幂等 counting fake 工具边界各只接受 1 次；取消、跨 owner、超时/预算、有限 render 重试和迟到结果均 fail-closed | 结构化计划、跨实例同 task 恢复、单次提交、预算/取消/迟到结果与 owned ready output 三组信号全部成立 |
+| T4 可恢复黄金链编排 | `DONE` | `T4-E01` 保留一般恢复历史证据；`T4-E02` 已补齐精确合同：generation 1 为初次 claim 基线，`maxResumeAttempts=1` 时允许一次 fresh 恢复、下一次才耗尽；Provider adapter 已接受而 waiting CAS 未落库时，fresh instance 以同一幂等键恢复同一根任务，adapter、AgentRun 与生成根任务均为 1 | 结构化计划、跨实例同 task 恢复、单次提交、预算/取消/迟到结果与 owned ready output三组信号全部成立 |
 
 ## 已知风险与前置缺口
 
@@ -84,6 +84,7 @@
 - T3 工具按 Unicode code point 限制口播文案，下层现有数字人 Service 仍按 UTF-16 `length()` 限制；极端 astral 字符输入可能在工具校验后由下层稳定拒绝。固定中文样例不受影响，当前不为未经过主链的字符边界扩张实现。
 - T4 的 `waiting_input` 只冻结当前缺输入事实；补充输入时通过新版本 Brief/Profile 创建新 run，不在原 run 上改写不可变合同。当前本机/试运行链已 fail-closed，但“同 run 原地澄清后继续”尚未提供产品入口。
 - `T4-E01` 的恢复链使用真实 MySQL 与生产编排/持久 Service，但外部工具采用跨 context 共享、幂等计数 fake；它证明同一持久 task 恢复、提交接受次数与迟到结果边界，不等同于本轮重新调用真实 Provider。随机 IT 表直接采用 `100 + T4` 的最终结构，`110` ALTER 本身只经过静态 bootstrap 门禁，尚未在既有 `videoops_agent_dev` 表上执行；真实 Provider、OSS、Redis 与 HTTP/UI 均 `NOT_RUN`。
+- `T4-E02` 的崩溃窗穿过真实 `AgentToolServiceImpl`、资源生成 Service、生成 Service 与 MySQL，仅最外层声音 Provider adapter 为计数 fake；owned 输入和媒体落点为测试夹具，未访问真实 OSS。它证明 Provider 接受后的幂等恢复合同，不等同于真实 Provider 或 OSS 重跑。user 模块全量 Surefire 因既有、非本切片 `AppSecurityFailClosedConfigurationTest` 失败而未作为本轮门禁；本轮只运行与当前差异匹配的 33 个聚焦单元及 6 个真实 MySQL IT，不为无关失败扩张修复。
 
 ## 证据索引
 
@@ -113,10 +114,11 @@
 | T3-E01 | T3 类型化黄金链工具、幂等安全回放与成品对账 | 当前 T3 checkpoint 源码；真实 Spring/MyBatis 只读开发库边界 + 本地已授权 T1 成品；Provider/真实 OSS 写入关闭 | `branch:main; checkpoint:本提交; base:a03f5056b0ed2ca0864eb96239da90592bdd88bf; input status paths:13; jar sha256:8154A424BEBECE862DBC2EEEDE3042DD1C05928C8C79A816A68195F0B88B25E9` | `AiTaskTransactionServiceImplTest`、`AgentToolServiceImplTest`、`TimelineTaskApplicationServiceTest`；user-api package；真实工具只读回放；本地 MP4 SHA-256、ffprobe 与完整解码；开发规范、staged diff/秘密/媒体门禁 | `PASS`（本机/试运行 checkpoint）：聚焦测试 32/32，user-api package 成功；8 把工具使用显式 switch 和强类型参数，权限/principal/owner/多余参数正反用例通过。真实工具入口读取终态 voice `2088530227838955521`、video `2088530778710454273`，以原 high render 身份对 project `2088539060225290242` / task `2088539141703839746` 安全回放两次均返回同一根任务，异 revision 为 46609、跨 owner 拒绝，任务/execution/attempt/project/asset/job 摘要前后相同。最终可读 task `2088580140291354626` / asset `2088580141574811650` 为当前 owner 的 ready `timeline_render_output`；本地 MP4 为 5,244,591 bytes、SHA-256 `70AF66B5D57A43B3626DF1FE3C1CC85417010EC600C04050F3A93BA77FFEE0B7`，25.8 秒、1080×1920、30 fps、H.264 + AAC，完整解码 exit 0。T1.8 原任务为 `standard`，不冒充固定 `high` 的 render replay；因此用 T1.7 high task证明回放、T1.8 final task证明最终成品。18081/39000/8189 均未监听，临时夹具与敏感环境已清理。`NOT_RUN`：新 voice/video/render 提交、真实 Provider、真实 OSS 下载或写入、HTTP/UI、T2 AgentRun 接入与 T4 |
 | T3-E02 | T3 独立审查后的历史成品关联与失败事实修复 | 当前窄修复 checkpoint 源码；本地单元/Mapper 契约与 user-api package；未连接 DB/Redis/Provider/OSS | `branch:main; checkpoint:本提交; base:1768a6ea0c9cb5080079a0ecd6039d23619ddb00; input status paths:13; jar sha256:E32E1065422421F33F47B8CE877146E2A01193F0BF01996FE71F165B3046A7EA` | 旧实现反例；`AiTaskTransactionServiceImplTest`、`CreationAssetServiceImplTest`、`TimelineServiceBoundaryTest`、`DigitalHumanGenerationServiceImplTest`、`AgentToolServiceImplTest`、`TimelineTaskApplicationServiceTest`；user-api package；开发规范、diff 与 staged 秘密/媒体门禁 | `PASS`（merge checkpoint）：旧实现对“task A 后项目 latest 已为 B”反例稳定报 46704；修复后 Mapper 以单条 JOIN 同时冻结 task/asset owner、task success/resultAsset、asset source/ready/video/origin，工具查询 A 稳定返回 asset A 且不读 latest。render、voice、video 的 failed 结果返回持久化 stable code + safe message，缺任一事实则 46704；测试夹具 taskType 已纠正为 `timeline_render`。六类 82/82、failure/error/skipped=0，package 成功；无新工具、表、Controller、UI 或外部调用。`NOT_RUN`：真实 MySQL 执行新增关联 SELECT、HTTP/UI、Provider、OSS、FFmpeg、T4 |
 | T4-E01 | T4 确定性黄金链、跨实例恢复、预算/取消与迟到结果 | 当前 T4 checkpoint 源码；本机 MySQL `ai_video_test` 的真实事务/CAS + 生产编排 Service + 幂等 counting fake 工具边界；未连接 Provider/OSS/Redis/HTTP | `branch:main; checkpoint:本提交; base:753666310745bc55657add2d09467ecae0a589a5; input status paths:17; migration sha256:67E074542ED120E6FF47A15A610A3254809E1BA009105772697E3B6DE1D367B2; jar sha256:60BFA15AE69B2283CD515E21159885166C418386DBAD6C12AF425506CF3378ED` | `AgentRunPersistenceIT` Failsafe；`AgentRunServiceImplTest`、`AgentRunOrchestrationServiceImplTest`、`AgentToolServiceImplTest`；clean user-api package 与 fat JAR entry 核验；bootstrap validator/Pester；开发规范；diff/秘密/媒体门禁；随机表与账号隔离后置检查 | `PASS`（本机/试运行 checkpoint）：真实 MySQL 5/5，failure/error/skipped 均 0；跨 fresh Spring context 从 voice waiting 恢复到 video、render 与 owned ready output，voice/video/render 三类提交各只接受 1 次，恢复始终查询/换绑同一持久任务。跨 owner cancel 被拒，owner cancel 后迟到 success 在 fresh context 工具调用与状态变化均为 0；缺输入、权限、期限、提交/恢复、render 重试预算与稳定失败转人工由聚焦单元 32/32 覆盖。随机 T4 七表残留 0，既有三张共享测试表仍为 3，测试账号访问 `ai_video`/`videoops_agent_dev` 均被拒。clean package 成功，fat JAR 内 T4 编排入口精确 1 个；bootstrap validator、Pester 16/16、开发规范与 diff check 全绿。`NOT_RUN`：迁移真实 `videoops_agent_dev`、真实 Provider/OSS/Redis、HTTP/UI、T5；counting fake 不冒充 Provider 实跑 |
+| T4-E02 | T4 恢复次数语义与 Provider 接受后崩溃窗窄修复 | 当前窄修复 checkpoint 源码；本机 MySQL `ai_video_test` + 真实类型化工具、资源生成/生成 Service；最外层声音 Provider adapter 为 counting fake；未连接真实 Provider/OSS/Redis/HTTP | `branch:main; checkpoint:本提交; base:bc7ed68030729e1cba7a4315a5fb1ad9e483b8e0; input status paths:6; jar sha256:BFB02EF2EC8CA924F22E4F39E4D300A5A8A3DF292306642C43F6C9697DB4D56B` | `AgentRunOrchestrationServiceImplTest`；core `AgentRunPersistenceIT` 与 user `AgentRunCrashWindowIT` Failsafe；`AgentRunServiceImplTest`、`AgentToolServiceImplTest`；user-api package 与 fat JAR/current class SHA 对账；开发规范、diff/staged 秘密与媒体门禁；独立监督审查 | `PASS`（本机/试运行 merge checkpoint）：generation 0 初领、generation 1 首次 fresh 查询、generation 2 才耗尽，submit/status 各 1 且 taskId 不变；聚焦单元 33/33。core MySQL IT 5/5、user 崩溃窗 IT 1/1，failure/error/skipped 均为 0；故障发生于真实工具与生成链返回后、waiting CAS 前，fresh instance 以同一幂等键恢复原 job，Provider adapter=1、AgentRun/生成根任务各 1。随机七表残留 0，既有三张共享测试表仍为 3。当前 user-api package 成功，fat JAR 中编排类 SHA-256 与当前 `target/classes` 精确一致；独立审查为 `Accept for local/pilot merge checkpoint`，P0/P1=0。`NOT_RUN`：user 模块全量 Surefire（既有无关失败）、真实 Provider/OSS/Redis、HTTP/UI、真实 `videoops_agent_dev` 迁移与 T5；不冒充生产 ship-ready |
 
 ## 下一条准确动作
 
-`PAUSED`：T4 本机/试运行 checkpoint 已完成，等待独立验收；不自动进入 T5。
+`PAUSED`：T4 两项精确恢复合同已闭合并形成 clean checkpoint；等待下一阶段明确放行，不进入 T5。
 
 ## 开工与收工协议
 
