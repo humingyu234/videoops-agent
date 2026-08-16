@@ -1,32 +1,70 @@
 # VideoOps Agent
 
-面向 Agent 赛道的 AI 视频交付智能体：用户用自然语言描述交付目标并提供形象、音色或素材，Agent 负责澄清约束、编排数字人口播生成链、观察异步任务、自动验收、有限返工，并在关键节点请求人工确认。
+面向图生数字人口播交付的受约束 Agent：从已确认的交付目标出发，复用现有人物、原声、数字人、时间轴与渲染能力，持续记录任务、质量结论和人工决策，最终交付可下载 MP4。
 
-> 本仓库是脱敏后的开发基线，不代表 Agent 控制面或真实端到端链路已经完成。当前阶段、风险、阻塞、证据和下一动作只见 [docs/EXECUTION.md](docs/EXECUTION.md)。
+> 目标产品入口是 `/agent`。T7 全链仍为 `NEEDS_EVIDENCE`，实时状态见 [docs/EXECUTION.md](docs/EXECUTION.md)；下方历史真实样例来自 `/studio` 黄金链，不代表 `/agent` 端到端已经完成。
 
-## 参赛纵切面
+| 边界 | 证据等级 | 当前状态 |
+| --- | --- | --- |
+| T1 人工黄金链：`/studio` → IndexTTS2 / ComfyUI → 字幕与渲染 → MP4 | `REAL` | `PASS`，保留一条本机试运行成品 |
+| T2–T6：可恢复 AgentRun、白名单工具、质量门禁和有限返工 | `LOCAL` | 阶段 checkpoint 已有本机 MySQL / FFmpeg 及受控 adapter 边界证据 |
+| T7 默认 `/agent` 全链与四种演示 | `NOT_RUN` | 入口构建与认证烟测已通过；AgentRun 与四场景仍为 `NEEDS_EVIDENCE` |
+| 私有 GitHub 交付目标 | `LOCAL` | `origin` 已指向 [humingyu234/videoops-agent](https://github.com/humingyu234/videoops-agent)，远端 `main` 仍停在 T6 checkpoint；T7 当前改动未 push，公开可见性未验证且冻结 |
+
+`REAL` 表示真实 Provider 或真实媒体边界已经运行；`LOCAL` 表示仅在本机隔离资源或受控 fake 外边界验证；`NOT_RUN` 表示不能作为完成声明。
+
+## 产品纵切面
 
 ```text
-目标/素材
-  -> 需求澄清与 Delivery Brief
-  -> Agent 制订执行计划
-  -> 调用现有形象/音色/数字人/时间轴/渲染能力
-  -> 观察异步任务
-  -> 自动检查并有限返工
-  -> 人工确认
-  -> 可下载作品 + 完整执行轨迹
+交付目标 + 已授权人物/原声
+  -> 冻结 Brief 与验收标准
+  -> 受限步骤与八把白名单工具
+  -> 声音 / 数字人 / 时间轴 / 渲染任务
+  -> 三层质量验收与最多两次局部返工
+  -> 必要时人工批准
+  -> owned ready MP4 + AgentRun Trace
 ```
 
-- 默认参赛入口：`/agent`（待实现）。
-- 原七步 Studio：保留源码，首期从默认导航隐藏，作为内部调试与人工接管界面。
-- 核心视频链：复用现有认证、资产、音色、数字人任务、时间轴和渲染服务，不重复建设。
-- 自动返工：必须有次数、时间与成本上限，不能无限生成。
+- `/agent`：参赛默认入口，T7 完成后承载执行、Trace 与批准。
+- `/studio`：保留的真实生产链、调试和人工接管入口，不作为默认参赛入口。
+- 服务端决定 owner、权限、幂等、任务终态和资产可见性；前端不能覆盖这些事实。
+- 自动重试与返工有次数、时间和成本上限；外部结果未知时不重复提交。
 
-## 当前代码基线
+## 最小本地启动指针
 
-本仓库由公司项目缓存的 `origin/main@6ef783d3cc2ef83b420a52080e40b1eff39203e1` 导出为无历史快照，再进行配置脱敏。创建当日无法连接 Gitee，因此该提交是“最近一次已获取基线”，不是对远端当天最新状态的保证。详见 [docs/BASELINE.md](docs/BASELINE.md)。
+以下命令用于已完成本机隔离 MySQL、Redis 和 Git-ignored 配置后的无 Mock 开发启动；默认 fail-closed，不会自动打开 Provider 或黄金链能力。
 
-用户此前的“AI 对话后创建形象并保存”分支没有直接并入本基线。它的异步任务、私有资产、人工确认和保存链设计会作为后续迁移参考；当前图像供应商是本地 Demo，不能作为真实生成能力宣传。
+```powershell
+.\scripts\start-local-user-api.ps1 -Port 18081
+
+Set-Location .\ai-video-ui\ai-video-webapp
+npm ci
+npm run dev
+```
+
+前端代理默认指向 `http://127.0.0.1:18081`。真实黄金链只能在已获得素材、凭据、费用与 Provider 授权后显式启用；当前施工状态和唯一动作见 [docs/EXECUTION.md](docs/EXECUTION.md)。
+
+## 四种演示的验收门禁
+
+| 场景 | 必须观察到的产品事实 | T7 证据 |
+| --- | --- | --- |
+| 成功交付 | 从真实 `/agent` 进入同一 AgentRun，关联真实任务与 owned ready MP4，下载后 ffprobe 有效 | `NEEDS_EVIDENCE` |
+| 一次局部修复 | 明确质量缺口只使受影响的时间轴/渲染分支重做，声音与数字人根任务不重复提交 | `NEEDS_EVIDENCE` |
+| 转人工 | 低置信或主观冲突进入待批准；跨 owner、过期或错误 revision 的决定零 mutation | `NEEDS_EVIDENCE` |
+| 重启恢复 | Provider 接受任务后仅重启本项目服务，继续查询同一任务和幂等键，提交计数仍为 1 | `NEEDS_EVIDENCE` |
+
+这些占位只会在当前源码对应的 HTTP/UI、持久化和媒体证据全部成立后改为 `PASS`。
+
+## 已保存的真实媒体基准
+
+T1 经 `/studio` 真实调用 IndexTTS2 与 ComfyUI，并在本地完成字幕与 FFmpeg 渲染。改进版成品保存在 Git-ignored 本机证据目录，不进入仓库：
+
+- SHA-256：`70AF66B5D57A43B3626DF1FE3C1CC85417010EC600C04050F3A93BA77FFEE0B7`
+- 大小：`5,244,591` bytes；时长：`25.8 s`
+- 视频：`1080 × 1920`、`30 fps`、H.264；音频：AAC
+- 完整解码通过，含可见烧录中文字幕；黑帧、冻结和静音检测均为 0，音视频起止差为 0
+
+该样例用于回归质量入口和演示叙事；它不是 T7 `/agent` 新运行的替代证据。
 
 ## 工程结构
 
@@ -35,30 +73,16 @@ ai-video-ui/       React 用户端与运营端
 ai-video-api/      RuoYi-Vue-Plus 多模块后端
 ai-video-worker/   Python 媒体/任务工作进程
 ai-video-desktop/  Electron 薄壳
-docs/              产品范围、架构、契约和实施计划
-scripts/           本地验证与安全脚本
+docs/              产品范围、架构、契约与实时执行记录
+scripts/           本地启动、验证与安全检查
 ```
 
-## 开始前先读
+代码来源和脱敏基线见 [docs/BASELINE.md](docs/BASELINE.md)。参与开发先读 [AGENTS.md](AGENTS.md) 与 [RULES.md](RULES.md)；产品范围见 [docs/PROJECT.md](docs/PROJECT.md)，路线见 [docs/PLAN.md](docs/PLAN.md)。
 
-Codex 自动从 [AGENTS.md](AGENTS.md) 进入项目。会修改仓库、环境或进度时继续读取 [docs/EXECUTION.md](docs/EXECUTION.md)；实际执行时只读其中指向的当前详细计划。不要默认加载历史规格、计划或全部契约。
+## 私有使用、第三方组件与安全
 
-人类成员和专项任务按需读取：
+本仓库当前只面向私有评审、授权开发与试运行；公开发布和公开可见性均未获放行。原创贡献部分不授予公开使用许可，具体见 [LICENSE](LICENSE)。上游代码、字体和依赖仍分别适用其自身许可证，已核验的根层提示见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-1. [RULES.md](RULES.md)：项目工程、安全和数据硬边界。
-2. [docs/PROJECT.md](docs/PROJECT.md) 与 [docs/DECISIONS.md](docs/DECISIONS.md)：产品范围、完成标准和已确认取舍。
-3. [docs/PLAN.md](docs/PLAN.md)：仅用于调整 T0～T7 路线、范围或依赖。
-4. [docs/DOCUMENT_MAP.md](docs/DOCUMENT_MAP.md)：按任务选择专项文档和 skill。
-5. [docs/BASELINE.md](docs/BASELINE.md)：仅用于来源追溯、分支迁移或公开发布安全核对。
-6. 前后端编码时读取对应指南、编码规范及本次变更涉及的契约章节。
-
-## 安全
-
-- 不提交任何真实密钥、口令、Token、私有地址或证书。
-- 本地配置通过环境变量注入；变量名示例见 `.env.example`。
-- 原项目出现过真实形态凭据；原凭据应独立轮换。本仓库的脱敏不等于原凭据自动失效。
-- 推送公开 GitHub 前必须重新执行密钥扫描，并人工检查扫描结果。
-
-## 路线图
-
-先跑通人工黄金链，再实现交付契约/可恢复状态、类型化工具、受约束编排、自动评价与有限返工；最后完成 `/agent` 页面和公开交付。完整路线见 [docs/PLAN.md](docs/PLAN.md)，当前准确动作见 [docs/EXECUTION.md](docs/EXECUTION.md)。
+- 不提交密钥、口令、Token、签名 URL、私有地址、证书、未授权素材或本机媒体产物。
+- 本机配置只通过 Git-ignored 的安全载体和当前进程注入；默认配置保持 Provider fail-closed。
+- push 前必须重新运行秘密、媒体与公开快照门禁，并人工复核目标仓库与可见性。

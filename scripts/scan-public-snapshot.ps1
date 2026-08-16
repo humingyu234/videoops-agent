@@ -57,17 +57,51 @@ function Test-SafePlaceholder {
     return $Value -match '(?i)^(example|sample|placeholder|fake|test|dummy|change[-_]?me|x{4,}|your[_-].*)$'
 }
 
-$skipPattern = '\\.git\\|\\node_modules\\|\\target\\|\\dist\\|\\release\\|\\.m2\\|\\.pnpm-store\\'
 $textExtensions = @(
     '.yml', '.yaml', '.json', '.xml', '.properties', '.env', '.md', '.txt',
     '.java', '.kt', '.ts', '.tsx', '.js', '.jsx', '.cjs', '.mjs', '.py',
     '.ps1', '.cmd', '.sh', '.sql', '.toml', '.ini', '.conf'
 )
+$dangerousCarrierExtensions = @(
+    '.key', '.pem', '.ppk', '.p8', '.pk8', '.p12', '.pfx',
+    '.jks', '.keystore', '.kdbx', '.cer', '.crt', '.der', '.p7b', '.p7c',
+    '.clixml'
+)
+$dangerousCarrierNames = @('id_rsa', 'id_dsa', 'id_ecdsa', 'id_ed25519')
 
-$files = Get-ChildItem -LiteralPath $resolvedRoot -Recurse -File |
+$gitVisiblePaths = @(& git -C $resolvedRoot -c core.quotepath=false ls-files --cached --others --exclude-standard)
+if ($LASTEXITCODE -ne 0) {
+    throw 'Unable to enumerate Git-visible files for the public snapshot scan.'
+}
+
+foreach ($relativePath in $gitVisiblePaths) {
+    $normalizedPath = $relativePath.Replace('\', '/')
+    $pathSegments = @($normalizedPath -split '/')
+    $extension = [System.IO.Path]::GetExtension($normalizedPath).ToLowerInvariant()
+    $leafName = [System.IO.Path]::GetFileName($normalizedPath).ToLowerInvariant()
+
+    if (($pathSegments -contains '.local') -or ($pathSegments -contains '.runtime')) {
+        Add-Finding -Rule 'local-runtime-carrier' -Path $normalizedPath -Line 0
+        continue
+    }
+    if (($dangerousCarrierExtensions -contains $extension) -or ($dangerousCarrierNames -contains $leafName)) {
+        Add-Finding -Rule 'dangerous-secret-carrier' -Path $normalizedPath -Line 0
+    }
+}
+
+if ($findings.Count -gt 0) {
+    $findings |
+        Sort-Object Rule, Path, Line |
+        ForEach-Object { Write-Output ("{0}|{1}|{2}|{3}" -f $_.Rule, $_.Path, $_.Line, $_.Key) }
+    throw "Public snapshot scan found $($findings.Count) forbidden local or secret carrier(s)."
+}
+
+$files = $gitVisiblePaths |
+    ForEach-Object { Join-Path $resolvedRoot $_ } |
+    Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+    ForEach-Object { Get-Item -LiteralPath $_ } |
     Where-Object {
-        $_.FullName -notmatch $skipPattern -and
-        ($textExtensions -contains $_.Extension.ToLowerInvariant() -or $_.Name -like '.env*')
+        $textExtensions -contains $_.Extension.ToLowerInvariant() -or $_.Name -like '.env*'
     }
 
 foreach ($file in $files) {

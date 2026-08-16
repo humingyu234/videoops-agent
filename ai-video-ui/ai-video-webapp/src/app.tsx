@@ -49,7 +49,7 @@ export type AppInitialState = AppAuthState & {
 };
 
 /**
- * ProLayout is intentionally disabled for /studio and /user routes. Its
+ * ProLayout is intentionally disabled for /agent, /studio, and /user routes. Its
  * onPageChange hook therefore cannot be the only authentication gate.
  *
  * This Umi-level hook covers every client-side route, including layout-free

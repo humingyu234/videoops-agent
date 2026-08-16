@@ -1,12 +1,18 @@
 export default [
   {
+    path: '/agent',
+    name: 'VideoOps Agent',
+    component: './agent',
+    layout: false,
+  },
+  {
     path: '/',
     component: './digital-human-studio',
     layout: false,
     routes: [
       {
         path: '/',
-        redirect: '/studio',
+        redirect: '/agent',
       },
       {
         path: '/studio',

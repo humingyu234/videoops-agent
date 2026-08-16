@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import routes from '../config/routes';
 
 describe('creator routes', () => {
-  it('keeps the root redirect, protects discovery reads, and preserves only a legacy create redirect', () => {
+  it('makes the real Agent the default while preserving the protected Studio workspace', () => {
     const workspaceRoute = routes.find(
       (route) =>
         route.path === '/' && route.component === './digital-human-studio',
@@ -12,13 +12,19 @@ describe('creator routes', () => {
       expect.objectContaining({
         layout: false,
         routes: expect.arrayContaining([
-          expect.objectContaining({ path: '/', redirect: '/studio' }),
+          expect.objectContaining({ path: '/', redirect: '/agent' }),
           expect.objectContaining({ path: '/studio' }),
         ]),
       }),
     );
     expect(routes).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          path: '/agent',
+          name: 'VideoOps Agent',
+          component: './agent',
+          layout: false,
+        }),
         expect.objectContaining({
           path: '/orders/:orderId',
           name: '模板结果',

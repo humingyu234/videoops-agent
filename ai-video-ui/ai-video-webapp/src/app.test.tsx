@@ -226,7 +226,7 @@ describe('app runtime auth integration', () => {
     expect(routePaths).not.toContain('/user/register');
   });
 
-  it.each(['/studio', '/user/register-result', '/user/register'])(
+  it.each(['/agent', '/studio', '/user/register-result', '/user/register'])(
     'restores the session for the protected legacy route %s',
     async (pathname) => {
       const { getInitialState } = await import('./app');

@@ -6,14 +6,14 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 当前阶段 | T6：依赖感知的最多两次局部返工与三类人工批准（已完成） |
-| 当前详细计划 | `docs/superpowers/plans/2026-08-16-videoops-agent-t6-bounded-rework.md`（当前唯一辅助 runbook） |
-| 状态 | `DONE` |
-| 风险等级 | `RED`：返工将改变持久任务身份与候选产物；错误依赖范围、无限重试或批准越权均属于执行 spine |
-| 当前核对源码 | `branch:main; base/ec8f288dca73d70ea50c16957e88fbbd6bce00b2 (T5 clean checkpoint); T4 checkpoint:a66c7cfbbb0de4c75a75c9cfc82deee442d84ccc; T3 checkpoint:753666310745bc55657add2d09467ecae0a589a5; T2 checkpoint:a03f5056b0ed2ca0864eb96239da90592bdd88bf; T1 checkpoint:1fe6a92a23e6d8b4f8aa12552f09c1097498ba9e` |
-| 工作区 | 从 clean T5 checkpoint 开始 T6；26 个 T6 路径已完成验证，等待以本提交形成独立 checkpoint |
-| 最近有效运行证据 | `T6-E01`：有界返工、三类批准、fresh-context MySQL 恢复与当前 fat JAR 均通过；独立复审 P0/P1=0 |
-| 最后更新 | 2026-08-16（Asia/Shanghai） |
+| 当前阶段 | T7：`NEEDS_RUNTIME_MIGRATION / E2E NOT_RUN`；代码就绪 checkpoint 收口 |
+| 当前详细计划 | `docs/superpowers/plans/2026-08-16-videoops-agent-t7-product-entry.md`（当前唯一辅助 runbook） |
+| 状态 | `BLOCKED` |
+| 风险等级 | `RED`：默认入口将直接驱动真实 AgentRun、批准和成品下载；身份、幂等、恢复或 Trace 误报都属于执行 spine |
+| 当前核对源码 | `branch:main; base/45926f642c3d0ca54b22d6fac6044dd554fb7425 (T6 clean checkpoint); T5 checkpoint:ec8f288dca73d70ea50c16957e88fbbd6bce00b2; T4 checkpoint:a66c7cfbbb0de4c75a75c9cfc82deee442d84ccc; T3 checkpoint:753666310745bc55657add2d09467ecae0a589a5; T2 checkpoint:a03f5056b0ed2ca0864eb96239da90592bdd88bf; T1 checkpoint:1fe6a92a23e6d8b4f8aa12552f09c1097498ba9e` |
+| 工作区 | 从 clean T6 checkpoint 开始 T7；checkpoint 输入的 33 个状态路径均属于 Agent HTTP/Trace、`/agent` 页面、发布文档与 tracked-only 扫描门禁 |
+| 最近有效运行证据 | `T7-E01`：当前源码测试、前后端构建与无 Mock `/agent` 认证入口已通过，达到代码就绪；真实 AgentRun 全链仍受开发库缺少 `100/110/120` 与当前可用管理员身份缺失阻塞 |
+| 最后更新 | 2026-08-17（Asia/Shanghai） |
 
 状态只使用 `NOT_STARTED`、`IN_PROGRESS`、`VERIFYING`、`BLOCKED`、`DONE`、`NEEDS_REVALIDATION`、`DEFERRED`、`PAUSED`。`BLOCKED` 仅表示当前范围内已经没有安全动作可继续；`PAUSED` 表示负责人要求在已完成切片后停止，不代表技术阻塞。
 
@@ -71,13 +71,20 @@
 | --- | --- | --- | --- |
 | T6 有界局部返工与批准 | `DONE` | `T6-E01`：质量候选、独立返工计数与批准事实已持久化；字幕失败只重建 project+render，媒体失败只重 render，最多两个返工候选；无改善、预算耗尽和主观项进入人工批准。真实 MySQL 恢复、崩溃窗、权限/owner/revision 与迟到写回门禁均通过 | 字幕失败只创建同一 video job 的新项目与 render；媒体失败只重 render；最多两个返工候选；无改善/预算/主观项转人工；三类批准精确且可恢复 |
 
+## T7 步骤现场
+
+| 步骤 | 状态 | 当前证据或阻塞 | 完成信号 |
+| --- | --- | --- | --- |
+| T7 默认入口、Trace、演示与公开交付 | `BLOCKED` | 当前前后端合同代码、owner-scoped durable Trace、`/agent` 默认路由和生产构建均已存在；无 Mock 预览的 `/agent` 为 HTTP 200，并由真实认证门禁重定向至 `/user/login?redirect=/agent`。开发库仍只有 T1 的 35 表，缺少 `100/110/120`，而当前运行账号没有 DDL；因此尚未创建 AgentRun、未执行四场景或真实 Provider/OSS，全链不可虚报通过 | `/agent` 无 Mock 运行；成功、局部修复、转人工、重启恢复四场景可复现；README、许可证、扫描、测试、视频与同一 checkpoint 一致 |
+
 ## 已知风险与前置缺口
 
-- Java 21.0.12 已安装，但当前基础环境未设置 `JAVA_HOME` 且 `java` 不在 PATH；单个 PowerShell 进程临时注入后验证可用，后续 Maven 命令必须显式复现该注入。
+- Java 21.0.12 当前可由 `java.exe` 直接解析；T7 当前源码聚焦测试、package 和 18081 启动均已使用该运行时通过，不再保留“Java 不在 PATH”的陈旧描述。
 - 本机 IndexTTS2 `39000` 与 ComfyUI `8189` 仍未监听；`T1-E14` 复用远端 company-dev-gpu 并由当前 Adapter 完成了唯一真实 voice/video 任务，因此无需把公司 GPU 服务重建到本机。私有地址和认证未进入仓库或证据。
 - `8080` 已确认是旧公司项目后端，本任务未停止也未调用它；`T1-E11` 已在其保持运行时证明 VideoOps 只连接新库/DB14。因未获停止旧服务授权，旧 8080 停止态没有动态复跑；独立 datasource、最小权限 1142 拒绝和运行连接归属证明当前应用不以旧实例为运行依赖。
 - 共享 `ai_video` 的 T1-E06 只保留为历史诊断证据，不能支持当前数据库完成声明。T1-E10 仅按负责人明确授权把旧 dev 管理员凭据在本机子进程内一次性用于新库 bootstrap，后续运行不依赖该身份，也未对共享库执行 DDL/DML；其生命周期由负责人管理，不构成本轮阻塞。
 - 独立 `videoops_agent_dev` 已由 manifest 冻结的 `001..090 → 900` 包从空库建立。`ry_vue.sql`、旧 25 份混合迁移和旧 2 MB 广种子只保留为来源审计，仍不得作为当前新库执行入口。
+- T7 的 AgentRun HTTP 入口依赖 manifest 中尚未应用到 `videoops_agent_dev` 的精确顺序 `100 → 110 → 120`：`100_agent_run_schema.sql`（SHA-256 `67D8C51C5A7A7C873A32A33A76CB6122325BFA83D0B4ADB6C78BDD228EC8B5F0`）、`110_agent_run_orchestration.sql`（`67E074542ED120E6FF47A15A610A3254809E1BA009105772697E3B6DE1D367B2`）、`120_agent_run_quality_control.sql`（`66642F11397EE38968A8DEAC8B90118E3EB575585D41B23C823685AA479273D2`）。它们只需要目标 schema 上的 `SELECT`、`CREATE`、`ALTER`；不需要建/删数据库、用户或授权，也不得执行 `900` seed。当前库仍为 35 表，运行账号仅有 DML；已授权的旧 dev 管理身份认证失败，现有 DPAPI 载体只含运行身份。除非负责人提供当前本机管理员身份或在目标库精确应用这三步，否则真实 `/agent` 全链保持阻塞；不得改写旧 8080、`ai_video`、Redis DB0 或用测试库冒充。
 - Redis DB 14 当前 `DBSIZE=1`，唯一项目 marker 属于 `videoops-agent:dev`、foreign=0，DB0 前后均为 2；DB 15保留给集成测试。源码审计表明 Redisson NameMapper + Sa-Token 双前缀可覆盖现有键写入，但 Pub/Sub 跨 DB，因此非空全局前缀仍是硬门禁。
 - `T1-E09` 只闭合当前 T1 dev 黄金链的最小 OSS 代码边界；`T1-E13` 真实验证人物/声音，`T1-E14` 又真实验证数字人登记与 Timeline 成品均经项目 JVM client 写入 `videoops-agent/dev/`。通用 RuoYi OSS 工厂、RunningHub 和管理端 CRUD 仍未迁移，不能把本次结论外推到未运行入口。
 - 本地 output 目录仍只是下载/证据落点，不是自动 final output-root；`T1-E14` 已把本次最终 MP4 从授权入口下载到该目录，线上权威记录仍是新库中的 output asset 与项目 OSS namespace。
@@ -131,10 +138,11 @@
 | T5-E01 | T5 当前成品三层逐项质量验收 | 当前 T5 checkpoint 源码；T1 已授权下载的 ignored MP4、本机真实 FFprobe/FFmpeg；任务/项目/不可变版本事实只读准备后经生产质量入口验证；未连接 Provider/OSS/Redis/HTTP | `branch:main; checkpoint:本提交; base:a66c7cfbbb0de4c75a75c9cfc82deee442d84ccc; input status paths:25; jar sha256:E3C3EDB4DAF7C8ECF05B7AE2798AEB1E03ADF222D41139440178CF3B1ADE1115` | `TimelineOutputQualityServiceImplTest`、`CreationAssetServiceImplTest`、`TimelineDtoContractTest`、`TimelineServiceBoundaryTest`、`FfmpegTimelineMediaRenderServiceTest`、`AgentToolServiceImplTest`、`AgentRunOrchestrationServiceImplTest`；`TimelineOutputQualityLocalIT`；user-api package 与嵌套 T5 class 对账；开发规范、diff/staged 秘密与媒体门禁 | `PASS`（本机/试运行 checkpoint）：聚焦单元 77/77；真实 LocalIT 1/1，failure/error/skipped 均为 0。任务 `2088580140291354626`、output asset `2088580141574811650` 与不可变 render input `2088580140345880578` 被 owner-scoped 绑定；MySQL JSON 解析为 DTO 后使用同一 `JsonMapper` canonicalize 再校验 content hash，物理格式变化通过、语义变化失败。成品 5,244,591 bytes，SHA-256 `70AF66B5D57A43B3626DF1FE3C1CC85417010EC600C04050F3A93BA77FFEE0B7`；真实 FFprobe 与完整解码得到 25.8 秒、1080×1920、30 fps、H.264 + AAC。250/251 ms 由质量层基于 probe 事实判定；renderer 只保留来源、大小与 SHA fail-closed。固定 16 项结果为 9 `PASS`、7 `REVIEW`、0 `FAIL`，三层为 5/6/5，无总分；must/prohibited 未配置与 5 项感知事实不冒充 PASS。首次 LocalIT 仅在 FFmpeg 启动前拒绝 WinGet 链接，改用同一安装的真实可执行路径后 fresh 通过，旧红报告不作证据。当前 fat JAR 已核对嵌入 T5 质量类。`NOT_RUN`：真实 OSS/Provider、重新生成/付费、OCR/ASR/人脸/口型 evaluator、HTTP/UI、T6/T7 |
 | T5-E02 | T5 环境/损坏分类、语义标点与真实成品关联窄修复 | 当前 T5 窄修复源码；本机 MySQL `ai_video_test` 的生产 Mapper/Service；最外层为计数本地存储 adapter；T1 已授权下载的 ignored MP4 与本机真实 FFprobe/FFmpeg；未连接真实 OSS/Provider/Redis/HTTP/UI | `branch:main; checkpoint:本提交; base:7149489e65d9c7f3806eb2e5af41ef97f5ef5e8e; input status paths:14; jar bytes:188974617; jar sha256:DD624F8D4F0E54CB0C641D18D53AB4DFF52BB4BEA5F9B958AF6187C1670CA2A6` | 11 类聚焦测试；临时 `TimelineOutputQualityPersistenceIT` Failsafe 报告；当前 T1 MP4 与截断同字节流；user-api package 与 fat JAR/module/class 字节对账；开发规范、diff/staged 秘密与媒体门禁 | `PASS`（本机/试运行 checkpoint）：聚焦测试 98/98，failure/error/skipped 均为 0；其中原 77 项全部保留。临时真实边界 Failsafe 1/1、0 skip：生产 `CreationAssetMapper/Service` 在 `ai_video_test` 验证精确 owner/task/resultAsset/sourceRef 正例，跨 owner、错 task、错 asset 与错 sourceRef 均在本地存储读取前拒绝，随机表精确清理为 0；最外层本地 adapter 不冒充 OSS。当前 T1 MP4 为 5,244,591 bytes、SHA-256 `70AF66B5D57A43B3626DF1FE3C1CC85417010EC600C04050F3A93BA77FFEE0B7`，真实 FFprobe 与完整解码通过；截断同一字节流稳定判定媒体输入损坏。renderer 关闭、超时及存储不可达统一输出 5 项低置信 `REVIEW`，只有确证输入损坏才把 `media.playable` 判为高置信 `FAIL`。保存规范化、trusted/Whisper 对齐、ASS 与质量判定共用 `SubtitleDisplayNormalizer`：仅明确句读白名单可省略，`/`、`-`、`.`、`:` 默认保留，`3.14→314`、`12:30→1230`、`8/16→816` 与 `A-12→A12` 均拒绝，普通句读/空白仍可等价。旧 257 行 LocalIT 已删除；本次 248 行临时真实边界源码在验收后删除，未进入 checkpoint。当前 package 成功，fat JAR 内 core/infra 模块及四个关键 class 与当前构建输出字节一致。`NOT_RUN`：真实 OSS/Provider/Redis、HTTP/UI、重新生成或付费、T6/T7；P2 JSON 等值词法的更宽边界未扩张，仍以 DTO canonicalize 合同为准 |
 | T6-E01 | T6 有界依赖返工、三类批准与恢复控制面 | 当前 T6 checkpoint 源码；本机 MySQL `ai_video_test` 的真实事务/CAS；外层幂等 counting tool 与最外层声音 Provider adapter；未连接真实 Provider/OSS/Redis/HTTP/UI | `branch:main; checkpoint:本提交; base:ec8f288dca73d70ea50c16957e88fbbd6bce00b2; input status paths:26; migration sha256:66642F11397EE38968A8DEAC8B90118E3EB575585D41B23C823685AA479273D2; jar bytes:189025356; jar sha256:122870BBD03430578C840FEAEB16D2A9B7C332DD5B8CABF672A24451EE92F379` | 6 类聚焦单元；`AgentRunPersistenceIT`、`CreationTimelineIsolationIT`、`AgentRunCrashWindowIT` Failsafe；bootstrap validator/Pester；user-api clean package 与嵌套 core SHA 对账；开发规范、diff/staged 秘密与媒体门禁；独立 own-loop 复审 | `PASS`（本机/试运行 checkpoint）：聚焦单元 90/90；真实 MySQL 分别为 6/6、3/3、1/1，failure/error/skipped 均为 0。质量结果在持久边界重新解析固定 16 项并绑定 owner、render task、ready result asset 与 SHA，服务端复算返工/批准决定；`quality_repair_count` 与技术 retry/lease generation 独立且最多 2。字幕高置信失败只创建同一 video job 的新项目与 render，媒体失败只重 render；fresh context 对 project/render 各重入 2 次但唯一幂等身份各只接受 1 次，原 voice/video 两行与父子 ID 不变。initial/conditional/final 批准均由 owner/type/row/contract/approval revision、canonical personal workspace 与冻结 Brief 所需权限约束；MySQL 还直接拒绝 conditional/final 的 NULL evaluation 与终态批准的 NULL decider。Provider 接受后、waiting CAS 前崩溃由真实工具与生成 Service 证明 fresh replay 仍为同一 job、最外 adapter submit=1。条件批准按冻结合同进入 `waiting_input`，需新 Brief/Profile 与新 run，不冒充同 run 自动继续。随机表清理、旧三张共享测试表与双开发库拒绝已在本轮后置门禁通过；敏感环境残留 0。当前 clean package 的嵌套 core SHA 与当前 core artifact 精确一致；独立复审 P0/P1=0。`NOT_RUN`：同一测试进程内真实 Timeline application Service + AgentRun 的 monolithic crash E2E、迁移真实 `videoops_agent_dev`、真实 Provider/OSS/Redis、HTTP/UI、T7；组合证据不冒充生产 ship-ready |
+| T7-E01 | T7 Agent HTTP/Trace、默认页面与无外部调用运行烟测 | 当前 T7 代码就绪 checkpoint 源码；本机 Java 21、loopback 18081、生产 Web preview 8002；真实开发库/DB14 连接，仅认证前置；Provider/OSS/Timeline 均关闭 | `branch:main; checkpoint:本提交; base/origin-main:45926f642c3d0ca54b22d6fac6044dd554fb7425; input status paths:33; jar bytes:189080091; jar sha256:FF3630A8A4335305EBF32CA4D55C5CE2B1362A546675A2BFDFACC00CA50253FD` | core/user 五类聚焦测试；前端四类聚焦测试、tsc/build；user-api package；当前 JAR 18081 启动；生产 preview `/agent`；浏览器 DOM/console；端口、临时文件和敏感环境后置清理 | `CODE READY / NEEDS_RUNTIME_MIGRATION / E2E NOT_RUN`：后端 46/46、前端 39/39，failure/error/skipped 均为 0；tsc、生产 build（70 assets）与 user-api package 通过。当前 JAR 在 Provider/OSS/Timeline 全关闭时独占 `127.0.0.1:18081`；生产 preview 的 `/agent` 为 HTTP 200，浏览器由真实认证门禁重定向到 `/user/login?redirect=/agent`，console error/warn 为 0。Web 先停、18081 后停，两个端口均释放，旧 8080 PID `34172` 保持不变；一次性启动/清理文件、6 份 ignored 日志与敏感环境均清零。`E2E NOT_RUN`：`videoops_agent_dev` 尚未应用 `100/110/120` 且无当前可用管理员身份；本轮没有登录、创建 AgentRun、执行四场景或调用 Provider/OSS。`origin` 已指向目标私有仓库且远端 `main` 仍停在本条 base；本 checkpoint 不 push，公开可见性未验证并保持冻结。 |
 
 ## 下一条准确动作
 
-`T7 NOT_STARTED`：先以本提交冻结 clean T6 checkpoint；随后按现有路线只启动 T7 产品入口、Trace/审批、演示与发布准备，不回写 T6 范围。
+`T7 NEEDS_RUNTIME_MIGRATION / E2E NOT_RUN`：代码就绪 checkpoint 完成后等待当前可用管理员身份，在 `127.0.0.1:3306/videoops_agent_dev` 只按 manifest 应用 `100 → 110 → 120`；随后用当前账号从真实 `/agent` 完成一条最多一次付费生成及成功、局部修复、转人工、重启恢复和跨 owner/过期批准负例。`origin/main` 继续保持在 T6 base，不 push 本 checkpoint。
 
 ## 开工与收工协议
 
