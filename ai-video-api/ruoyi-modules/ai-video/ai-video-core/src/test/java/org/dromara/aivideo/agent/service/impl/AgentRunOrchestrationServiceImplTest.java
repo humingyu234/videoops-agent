@@ -6,9 +6,13 @@ import org.dromara.aivideo.agent.service.IAgentRunService;
 import org.dromara.aivideo.agent.service.IAgentToolService;
 import org.dromara.aivideo.identity.dto.AppPrincipalSnapshotDTO;
 import org.dromara.aivideo.identity.dto.AppWorkspaceSessionSnapshotDTO;
+import org.dromara.aivideo.timeline.dto.TimelineOutputQualityDTO;
+import org.dromara.common.core.exception.ServiceException;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -18,9 +22,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
@@ -103,6 +109,50 @@ class AgentRunOrchestrationServiceImplTest {
 
         verifyNoInteractions(toolService);
         verify(runService, never()).claim(any(), any());
+    }
+
+    @Test
+    void initialApprovalFreezesTheContractBeforeTheFirstToolSideEffect() {
+        AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
+        IAgentRunService.AgentRunView unapproved = run("queued", 0, 0, null, null, 0,
+            NOW.minusSeconds(10), 0, null, 0);
+        when(runService.getOwnedExecutionSnapshot(principal, 1001L))
+            .thenReturn(snapshot(unapproved, briefNew(), profile(2, 1)));
+        when(runService.requestInitialApproval(eq(principal), any())).thenReturn(approval("initial"));
+
+        AgentRunOrchestrationDTOs.AdvanceResult result = service().advance(principal, command());
+
+        assertThat(result.runStatus()).isEqualTo("waiting_approval");
+        assertThat(result.approvalType()).isEqualTo("initial");
+        assertThat(result.pendingApprovalId()).isEqualTo(1301L);
+        verifyNoInteractions(toolService);
+        verify(runService, never()).claim(any(), any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"initial", "conditional", "final"})
+    void approvalRejectsRevokedPermissionsAndNonCanonicalWorkspaceBeforeMutation(String approvalType) {
+        AppPrincipalSnapshotDTO missingPermission = principal(Set.of("aivideo:task:query"));
+        AppPrincipalSnapshotDTO nonCanonical = new AppPrincipalSnapshotDTO(
+            1001L, "creator", "desktop", 1L, 1L, 1L, 1L, null);
+        IAgentRunService.ExecutionSnapshot snapshot = snapshot(
+            run("waiting_approval", 0, 0, null, null, 901L, NOW.minusSeconds(10), 0, 1301L, 1L),
+            briefNew(), profile(2, 1));
+        when(runService.getOwnedExecutionSnapshot(missingPermission, 1001L)).thenReturn(snapshot);
+        when(runService.getOwnedExecutionSnapshot(nonCanonical, 1001L)).thenReturn(snapshot);
+        AgentRunOrchestrationDTOs.ApprovalCommand command = new AgentRunOrchestrationDTOs.ApprovalCommand(
+            1001L, 0L, 1L, 1301L, 1L, approvalType, true);
+
+        assertThatThrownBy(() -> service().decideApproval(missingPermission, command))
+            .isInstanceOf(ServiceException.class)
+            .extracting(exception -> ((ServiceException) exception).getCode())
+            .isEqualTo(46703);
+        assertThatThrownBy(() -> service().decideApproval(nonCanonical, command))
+            .isInstanceOf(ServiceException.class)
+            .extracting(exception -> ((ServiceException) exception).getCode())
+            .isEqualTo(46703);
+
+        verify(runService, never()).decideApproval(any(), any());
     }
 
     @Test
@@ -290,25 +340,135 @@ class AgentRunOrchestrationServiceImplTest {
     }
 
     @Test
-    void successfulRenderInspectionCompletesTheExactWaitingTaskAndOwnedAsset() {
+    void successfulRenderInspectionRequestsFinalApprovalForTheExactCandidate() {
         AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
         when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(snapshot(
             run("waiting_external_task", 0, "ai_task", 801L, 0),
             "{\"startAt\":\"render_task\",\"taskId\":\"801\"}", profile(0, 1)));
         when(runService.claim(eq(principal), any())).thenReturn(lease("ai_task", 801L));
         when(toolService.execute(eq(principal), any())).thenReturn(successRender(), output());
-        when(runService.completeExternalTask(eq(principal), any())).thenReturn(true);
+        when(runService.recordQualityEvaluation(eq(principal), any())).thenReturn(evaluation(0, "final", "none"));
+        when(runService.requestQualityApproval(eq(principal), any())).thenReturn(approval("final"));
 
         AgentRunOrchestrationDTOs.AdvanceResult result = service().advance(principal, command());
 
-        assertThat(result.runStatus()).isEqualTo("completed");
+        assertThat(result.runStatus()).isEqualTo("waiting_approval");
+        assertThat(result.outcome()).isEqualTo("approval_required");
         assertThat(result.candidateAssetId()).isEqualTo(901L);
+        assertThat(result.approvalType()).isEqualTo("final");
         assertToolNames(principal, "get_timeline_render_status", "inspect_timeline_output");
-        ArgumentCaptor<IAgentRunService.CompleteExternalTaskCommand> completion =
-            ArgumentCaptor.forClass(IAgentRunService.CompleteExternalTaskCommand.class);
-        verify(runService).completeExternalTask(eq(principal), completion.capture());
-        assertThat(completion.getValue().taskId()).isEqualTo(801L);
-        assertThat(completion.getValue().candidateAssetId()).isEqualTo(901L);
+        verify(runService).recordQualityEvaluation(eq(principal), any());
+        verify(runService).requestQualityApproval(eq(principal), any());
+        verify(runService, never()).completeExternalTask(any(), any());
+    }
+
+    @Test
+    void subtitleFailureCreatesOnlyOneSameVideoProjectAndRenderRepair() {
+        AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
+        when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(snapshot(
+            run("waiting_external_task", 1, "ai_task", 801L, 0),
+            "{\"startAt\":\"render_task\",\"taskId\":\"801\"}", profile(0, 1)));
+        when(runService.claim(eq(principal), any())).thenReturn(lease("ai_task", 801L));
+        AgentToolDTOs.ProjectResult repairedProject = new AgentToolDTOs.ProjectResult(
+            "702", "editing", "1", 1080, 1920, 30, 25_800L);
+        AgentToolDTOs.RenderTaskResult repairedRender = new AgentToolDTOs.RenderTaskResult(
+            "802", "queued", "queued", "702", "1");
+        when(toolService.execute(eq(principal), any())).thenReturn(
+            successRender(), output(Set.of("subtitle.timing")), repairedProject, repairedRender);
+        when(runService.recordQualityEvaluation(eq(principal), any()))
+            .thenReturn(evaluation(0, "repair", "timeline_render", quality(Set.of("subtitle.timing"))));
+        when(runService.startQualityRepair(eq(principal), any())).thenReturn(
+            new IAgentRunService.QualityRepairReceipt(waiting("ai_task", 802L), 1401L, 1L,
+                "timeline_render"));
+
+        AgentRunOrchestrationDTOs.AdvanceResult result = service().advance(principal, command());
+
+        assertThat(result.waitingTaskId()).isEqualTo(802L);
+        ArgumentCaptor<AgentToolDTOs.Call> calls = ArgumentCaptor.forClass(AgentToolDTOs.Call.class);
+        verify(toolService, times(4)).execute(eq(principal), calls.capture());
+        assertThat(calls.getAllValues()).extracting(AgentToolDTOs.Call::toolName).containsExactly(
+            "get_timeline_render_status", "inspect_timeline_output", "prepare_timeline_project",
+            "render_timeline");
+        AgentToolDTOs.Call projectCall = calls.getAllValues().get(2);
+        assertThat(projectCall.arguments().get("videoJobId").textValue()).isEqualTo("601");
+        assertThat(projectCall.arguments().get("idempotencyKey").textValue())
+            .isEqualTo("agent-run:1001:repair-project:1");
+        assertThat(calls.getAllValues().get(3).arguments().get("idempotencyKey").textValue())
+            .isEqualTo("agent-run:1001:repair-render:1");
+        verify(runService).startQualityRepair(eq(principal), any());
+    }
+
+    @Test
+    void highConfidenceMediaFailureCreatesOnlyOneRenderRepair() {
+        AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
+        when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(snapshot(
+            run("waiting_external_task", 1, "ai_task", 801L, 0),
+            "{\"startAt\":\"render_task\",\"taskId\":\"801\"}", profile(0, 1)));
+        when(runService.claim(eq(principal), any())).thenReturn(lease("ai_task", 801L));
+        AgentToolDTOs.RenderTaskResult repairedRender = new AgentToolDTOs.RenderTaskResult(
+            "802", "queued", "queued", "701", "3");
+        when(toolService.execute(eq(principal), any())).thenReturn(
+            successRender(), output(Set.of("media.playable")), repairedRender);
+        when(runService.recordQualityEvaluation(eq(principal), any()))
+            .thenReturn(evaluation(0, "repair", "render", quality(Set.of("media.playable"))));
+        when(runService.startQualityRepair(eq(principal), any())).thenReturn(
+            new IAgentRunService.QualityRepairReceipt(waiting("ai_task", 802L), 1401L, 1L, "render"));
+
+        AgentRunOrchestrationDTOs.AdvanceResult result = service().advance(principal, command());
+
+        assertThat(result.waitingTaskId()).isEqualTo(802L);
+        assertToolNames(principal, "get_timeline_render_status", "inspect_timeline_output", "render_timeline");
+        verify(runService).startQualityRepair(eq(principal), any());
+    }
+
+    @Test
+    void unscopedConditionalQualityPersistsAsManualBeforeApproval() {
+        AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
+        when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(snapshot(
+            run("waiting_external_task", 0, "ai_task", 801L, 0),
+            "{\"startAt\":\"render_task\",\"taskId\":\"801\"}", profile(0, 1)));
+        when(runService.claim(eq(principal), any())).thenReturn(lease("ai_task", 801L));
+        when(toolService.execute(eq(principal), any())).thenReturn(
+            successRender(), output(Set.of("style.tone_match")));
+        when(runService.recordQualityEvaluation(eq(principal), any()))
+            .thenReturn(evaluation(0, "manual", "manual", quality(Set.of("style.tone_match"))));
+        when(runService.requestQualityApproval(eq(principal), any())).thenReturn(approval("conditional"));
+
+        AgentRunOrchestrationDTOs.AdvanceResult result = service().advance(principal, command());
+
+        ArgumentCaptor<IAgentRunService.RecordQualityEvaluationCommand> command =
+            ArgumentCaptor.forClass(IAgentRunService.RecordQualityEvaluationCommand.class);
+        verify(runService).recordQualityEvaluation(eq(principal), command.capture());
+        assertThat(command.getValue().decision()).isEqualTo("manual");
+        assertThat(command.getValue().repairScope()).isEqualTo("manual");
+        assertThat(result.approvalType()).isEqualTo("conditional");
+        assertToolNames(principal, "get_timeline_render_status", "inspect_timeline_output");
+    }
+
+    @Test
+    void firstRepairWithoutMeasurableImprovementRequestsConditionalApprovalWithoutAnotherTool() {
+        AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
+        IAgentRunService.AgentRunView repaired = run("waiting_external_task", 1, 1,
+            "ai_task", 801L, 0, NOW.minusSeconds(10), 1, null, 1);
+        TimelineOutputQualityDTO unchanged = quality(Set.of("subtitle.timing"));
+        when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(snapshot(
+            repaired, "{\"startAt\":\"render_task\",\"taskId\":\"801\"}", profile(0, 1)));
+        when(runService.claim(eq(principal), any())).thenReturn(lease("ai_task", 801L));
+        when(toolService.execute(eq(principal), any())).thenReturn(
+            successRender(), output(Set.of("subtitle.timing")));
+        when(runService.getOwnedQualityEvaluation(principal, 1001L, 0L))
+            .thenReturn(evaluation(0, "repair", "timeline_render", unchanged));
+        when(runService.recordQualityEvaluation(eq(principal), any()))
+            .thenReturn(evaluation(1, "conditional", "timeline_render", unchanged));
+        when(runService.requestQualityApproval(eq(principal), any())).thenReturn(approval("conditional"));
+
+        AgentRunOrchestrationDTOs.AdvanceResult result = service().advance(principal, command());
+
+        assertThat(result.runStatus()).isEqualTo("waiting_approval");
+        assertThat(result.approvalType()).isEqualTo("conditional");
+        assertToolNames(principal, "get_timeline_render_status", "inspect_timeline_output");
+        verify(runService, never()).startQualityRepair(any(), any());
+        verify(runService).requestQualityApproval(eq(principal), any());
     }
 
     private AgentRunOrchestrationServiceImpl service() {
@@ -343,9 +503,18 @@ class AgentRunOrchestrationServiceImplTest {
     private IAgentRunService.AgentRunView run(String status, long retryCount, String waitingSource,
                                                Long waitingId, long candidateAssetId, Instant startedAt,
                                                long leaseGeneration) {
+        return run(status, retryCount, 0L, waitingSource, waitingId, candidateAssetId, startedAt,
+            leaseGeneration, null, 1L);
+    }
+
+    private IAgentRunService.AgentRunView run(String status, long retryCount, long qualityRepairCount,
+                                               String waitingSource, Long waitingId, long candidateAssetId,
+                                               Instant startedAt, long leaseGeneration, Long pendingApprovalId,
+                                               long approvalRevision) {
         return new IAgentRunService.AgentRunView(1001L, 1101L, 1201L, 1L, status, 0L, leaseGeneration,
             waitingSource, waitingId, candidateAssetId == 0 ? null : candidateAssetId, NOW.minusSeconds(10),
-            retryCount, startedAt, NOW.plusSeconds(5), null, null, null);
+            retryCount, qualityRepairCount, pendingApprovalId, approvalRevision, startedAt,
+            NOW.plusSeconds(5), null, null, null);
     }
 
     private IAgentRunService.AgentRunLease lease(String waitingSource, Long waitingId) {
@@ -385,13 +554,64 @@ class AgentRunOrchestrationServiceImplTest {
 
     private AgentToolDTOs.RenderStatusResult successRender() {
         return new AgentToolDTOs.RenderStatusResult("801", "success", "success", 100, "701", "3", "901",
-            false, false, null, null);
+            false, false, null, null, "digital_human_job", "601", "黄金链");
     }
 
     private AgentToolDTOs.OutputInspectionResult output() {
+        return output(Set.of());
+    }
+
+    private AgentToolDTOs.OutputInspectionResult output(Set<String> failures) {
         return new AgentToolDTOs.OutputInspectionResult("801", "901", "ready", "video",
             "timeline_render_output", "video/mp4", "a".repeat(64), 5_244_591L, 25_800L, 1080, 1920,
-            true, true, "/api/studio/creation-assets/901/content");
+            true, true, "/api/studio/creation-assets/901/content", quality(failures));
+    }
+
+    private IAgentRunService.QualityEvaluationView evaluation(long candidateNo, String decision,
+                                                               String scope) {
+        return evaluation(candidateNo, decision, scope, quality(Set.of()));
+    }
+
+    private IAgentRunService.QualityEvaluationView evaluation(long candidateNo, String decision,
+                                                               String scope, TimelineOutputQualityDTO quality) {
+        String qualityJson;
+        try {
+            qualityJson = JsonMapper.builder().build().writeValueAsString(quality);
+        } catch (Exception exception) {
+            throw new AssertionError(exception);
+        }
+        return new IAgentRunService.QualityEvaluationView(1401L + candidateNo, 1001L, candidateNo,
+            801L, 901L, 701L, quality.ruleSetVersion(), qualityJson, "c".repeat(64), decision, scope);
+    }
+
+    private IAgentRunService.ApprovalView approval(String type) {
+        return new IAgentRunService.ApprovalView(1301L, 1001L,
+            "initial".equals(type) ? null : 1401L, type, "pending", "d".repeat(64), 1L,
+            "负责人批准", null, null);
+    }
+
+    private TimelineOutputQualityDTO quality(Set<String> failures) {
+        List<String> codes = List.of(
+            "media.playable", "media.container_codec", "media.video_dimensions", "media.audio_present",
+            "media.duration", "content.script_integrity", "content.must_include", "content.prohibited",
+            "subtitle.text_integrity", "subtitle.safe_area", "subtitle.timing",
+            "perceptual.identity_similarity", "perceptual.lip_sync", "perceptual.voice_consistency",
+            "perceptual.visual_stability", "style.tone_match");
+        List<TimelineOutputQualityDTO.Criterion> criteria = codes.stream().map(code -> {
+            TimelineOutputQualityDTO.Layer layer = code.startsWith("media.")
+                ? TimelineOutputQualityDTO.Layer.MEDIA
+                : code.startsWith("perceptual.") || code.startsWith("style.")
+                ? TimelineOutputQualityDTO.Layer.PERCEPTUAL : TimelineOutputQualityDTO.Layer.CONTENT_LAYOUT;
+            boolean subjective = layer == TimelineOutputQualityDTO.Layer.PERCEPTUAL;
+            return new TimelineOutputQualityDTO.Criterion(code, layer, "rule-v1",
+                failures.contains(code) ? TimelineOutputQualityDTO.Verdict.FAIL
+                    : subjective ? TimelineOutputQualityDTO.Verdict.REVIEW : TimelineOutputQualityDTO.Verdict.PASS,
+                failures.contains(code) ? TimelineOutputQualityDTO.Confidence.HIGH
+                    : subjective ? TimelineOutputQualityDTO.Confidence.LOW : TimelineOutputQualityDTO.Confidence.HIGH,
+                Map.of("fixture", true));
+        }).toList();
+        return new TimelineOutputQualityDTO("801", "901", "a".repeat(64), "811", "b".repeat(64),
+            "t5-quality-1", criteria);
     }
 
     private String briefNew() {

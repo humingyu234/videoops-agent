@@ -21,6 +21,29 @@ public interface IAgentRunService {
 
     boolean blockForInput(AppPrincipalSnapshotDTO principal, BlockForInputCommand command);
 
+    QualityEvaluationView recordQualityEvaluation(AppPrincipalSnapshotDTO principal,
+                                                  RecordQualityEvaluationCommand command);
+
+    QualityEvaluationView getOwnedQualityEvaluation(AppPrincipalSnapshotDTO principal,
+                                                     long agentRunId,
+                                                     long candidateNo);
+
+    ApprovalView requestInitialApproval(AppPrincipalSnapshotDTO principal,
+                                        RequestInitialApprovalCommand command);
+
+    ApprovalView requestQualityApproval(AppPrincipalSnapshotDTO principal,
+                                        RequestQualityApprovalCommand command);
+
+    ApprovalView getOwnedApproval(AppPrincipalSnapshotDTO principal,
+                                  long agentRunId,
+                                  long approvalId);
+
+    ApprovalDecisionReceipt decideApproval(AppPrincipalSnapshotDTO principal,
+                                            DecideApprovalCommand command);
+
+    QualityRepairReceipt startQualityRepair(AppPrincipalSnapshotDTO principal,
+                                            StartQualityRepairCommand command);
+
     /** Claims queued/expired running work, or rotates the fence for the same expired waiting task. */
     AgentRunLease claim(AppPrincipalSnapshotDTO principal, ClaimAgentRunCommand command);
 
@@ -99,6 +122,56 @@ public interface IAgentRunService {
         long expectedContractRevision,
         String errorCode,
         String errorSummary
+    ) {
+    }
+
+    record RecordQualityEvaluationCommand(
+        LeaseProof lease,
+        long candidateNo,
+        long renderTaskId,
+        long resultAssetId,
+        long projectId,
+        String ruleSetVersion,
+        String qualityJson,
+        String decision,
+        String repairScope
+    ) {
+    }
+
+    record RequestInitialApprovalCommand(
+        long agentRunId,
+        long expectedRowVersion,
+        long expectedContractRevision,
+        String requestSummary
+    ) {
+    }
+
+    record RequestQualityApprovalCommand(
+        LeaseProof lease,
+        long evaluationId,
+        String approvalType,
+        String requestSummary
+    ) {
+    }
+
+    record DecideApprovalCommand(
+        long agentRunId,
+        long expectedRowVersion,
+        long expectedContractRevision,
+        long approvalId,
+        long expectedApprovalRevision,
+        String approvalType,
+        String decision,
+        String decisionSummary
+    ) {
+    }
+
+    record StartQualityRepairCommand(
+        LeaseProof lease,
+        long evaluationId,
+        String repairScope,
+        long nextRenderTaskId,
+        Instant resumeAfter
     ) {
     }
 
@@ -193,11 +266,61 @@ public interface IAgentRunService {
         Long candidateAssetId,
         Instant stateChangedAt,
         long retryCount,
+        long qualityRepairCount,
+        Long pendingApprovalId,
+        long approvalRevision,
         Instant startedAt,
         Instant resumeAfter,
         Instant finishedAt,
         String errorCode,
         String errorSummary
+    ) {
+    }
+
+    record QualityEvaluationView(
+        long evaluationId,
+        long agentRunId,
+        long candidateNo,
+        long renderTaskId,
+        long resultAssetId,
+        long projectId,
+        String ruleSetVersion,
+        String qualityJson,
+        String qualityDigest,
+        String decision,
+        String repairScope
+    ) {
+    }
+
+    record ApprovalView(
+        long approvalId,
+        long agentRunId,
+        Long evaluationId,
+        String approvalType,
+        String approvalStatus,
+        String subjectDigest,
+        long revision,
+        String requestSummary,
+        String decisionSummary,
+        Instant decidedAt
+    ) {
+    }
+
+    record ApprovalDecisionReceipt(
+        long agentRunId,
+        long rowVersion,
+        String runStatus,
+        long approvalId,
+        long approvalRevision,
+        String approvalStatus
+    ) {
+    }
+
+    record QualityRepairReceipt(
+        WaitingReceipt waiting,
+        long evaluationId,
+        long qualityRepairCount,
+        String repairScope
     ) {
     }
 

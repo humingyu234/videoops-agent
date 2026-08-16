@@ -6,13 +6,13 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 当前阶段 | T5：确定性媒体、内容版式与感知主观三层质量验收 |
-| 当前详细计划 | `docs/superpowers/plans/2026-08-16-videoops-agent-t5-quality-evaluation.md`（当前唯一辅助 runbook） |
+| 当前阶段 | T6：依赖感知的最多两次局部返工与三类人工批准（已完成） |
+| 当前详细计划 | `docs/superpowers/plans/2026-08-16-videoops-agent-t6-bounded-rework.md`（当前唯一辅助 runbook） |
 | 状态 | `DONE` |
-| 风险等级 | `RED`：质量结论将控制后续交付与返工；误报和漏报均属于执行 spine |
-| 当前核对源码 | `branch:main; T5 窄修复 checkpoint:本提交; base:7149489e65d9c7f3806eb2e5af41ef97f5ef5e8e; T4 checkpoint:a66c7cfbbb0de4c75a75c9cfc82deee442d84ccc; T3 checkpoint:753666310745bc55657add2d09467ecae0a589a5; T2 checkpoint:a03f5056b0ed2ca0864eb96239da90592bdd88bf; T1 checkpoint:1fe6a92a23e6d8b4f8aa12552f09c1097498ba9e` |
-| 工作区 | 从 clean T5 checkpoint 完成 14 个状态路径；范围仅为媒体不可用/损坏分类、共享字幕展示规范化、匹配测试、删除失效 LocalIT 及本文件；checkpoint 后工作区 clean |
-| 最近有效运行证据 | `T5-E02`：当前源码聚焦测试 98/98、真实 MySQL + 本地媒体临时边界 1/1、当前 T1 MP4 完整解码/损坏反例、user-api package、嵌套 class 对账与静态门禁均通过；`T5-E01` 不再作为当前通过证据 |
+| 风险等级 | `RED`：返工将改变持久任务身份与候选产物；错误依赖范围、无限重试或批准越权均属于执行 spine |
+| 当前核对源码 | `branch:main; base/ec8f288dca73d70ea50c16957e88fbbd6bce00b2 (T5 clean checkpoint); T4 checkpoint:a66c7cfbbb0de4c75a75c9cfc82deee442d84ccc; T3 checkpoint:753666310745bc55657add2d09467ecae0a589a5; T2 checkpoint:a03f5056b0ed2ca0864eb96239da90592bdd88bf; T1 checkpoint:1fe6a92a23e6d8b4f8aa12552f09c1097498ba9e` |
+| 工作区 | 从 clean T5 checkpoint 开始 T6；26 个 T6 路径已完成验证，等待以本提交形成独立 checkpoint |
+| 最近有效运行证据 | `T6-E01`：有界返工、三类批准、fresh-context MySQL 恢复与当前 fat JAR 均通过；独立复审 P0/P1=0 |
 | 最后更新 | 2026-08-16（Asia/Shanghai） |
 
 状态只使用 `NOT_STARTED`、`IN_PROGRESS`、`VERIFYING`、`BLOCKED`、`DONE`、`NEEDS_REVALIDATION`、`DEFERRED`、`PAUSED`。`BLOCKED` 仅表示当前范围内已经没有安全动作可继续；`PAUSED` 表示负责人要求在已完成切片后停止，不代表技术阻塞。
@@ -65,6 +65,12 @@
 | --- | --- | --- | --- |
 | T5 三层逐项质量验收 | `DONE` | `T5-E02` 已闭合独立验收三项缺口：环境/存储不可用为低置信 REVIEW，确证媒体损坏为高置信 FAIL；保存、对齐、ASS 与质量入口共享语义标点规则；真实 MySQL Mapper/Service + 本地媒体边界已验证 owner/task/resultAsset/sourceRef 正反关联 | 当前 T1 MP4 健康解码，截断同字节流不再假 PASS；失效 257 行 LocalIT 与临时 248 行证明夹具均不进入 checkpoint |
 
+## T6 步骤现场
+
+| 步骤 | 状态 | 当前证据或阻塞 | 完成信号 |
+| --- | --- | --- | --- |
+| T6 有界局部返工与批准 | `DONE` | `T6-E01`：质量候选、独立返工计数与批准事实已持久化；字幕失败只重建 project+render，媒体失败只重 render，最多两个返工候选；无改善、预算耗尽和主观项进入人工批准。真实 MySQL 恢复、崩溃窗、权限/owner/revision 与迟到写回门禁均通过 | 字幕失败只创建同一 video job 的新项目与 render；媒体失败只重 render；最多两个返工候选；无改善/预算/主观项转人工；三类批准精确且可恢复 |
+
 ## 已知风险与前置缺口
 
 - Java 21.0.12 已安装，但当前基础环境未设置 `JAVA_HOME` 且 `java` 不在 PATH；单个 PowerShell 进程临时注入后验证可用，后续 Maven 命令必须显式复现该注入。
@@ -84,7 +90,7 @@
 - `T1-E14` 已从实际工作流冻结并记录 MultiTalk `Wan2_1-InfiniteTalk-Single_fp8_e4m3fn_scaled_KJ.safetensors`、主模型 `aniWan2114BFp8E4m3fn_i2v480pNew.safetensors` 与 LoRA `lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank16_bf16.safetensors`。该身份只绑定本次 workflow JSON SHA，不能外推为 Provider 全局版本。
 - 当前 `/studio` 轮询只走任务详情，已修复普通 Timeline 详情对 RunningHub `av_workflow_order` 表的无条件依赖并由真实 MySQL 请求验证；任务列表查询仍保留旧 workflow 依赖，因本次页面未经过而 `DEFERRED`。Web dev server 本次监听所有本机地址而非仅 loopback，也记为后续本地启动边界，不影响已完成的 18081 后端 loopback 约束。
 - T1.7 收工日志中的 `ECONNREFUSED` 发生在后端先于 Web 停止、页面仍执行既有轮询的窗口；当前轮询在任务终态会清理 timer，因此按收工顺序噪音处理，不扩张产品代码。后续固定先离开或停止 Web 并确认轮询结束，再停止 18081。
-- T2 本机 IT 非破坏性复用既有 `ai_video_test`：原 `av_ai_task`、`av_ai_task_execution`、`av_ai_task_attempt` 三表保持不变，测试只使用带随机后缀的六张临时业务表并在每例结束清理。新建的 `videoops_agent_t2_it` 仅有该 schema 的 `CREATE/DROP/SELECT/INSERT/UPDATE/DELETE`，凭据保存在 Git 忽略、当前用户 ACL 的 DPAPI 载体。负责人已明确接受此前管理秘密只进入私有任务工具输出的风险并决定无需轮换；该值未进入仓库、命令参数、日志或持久环境，本轮不再检查或输出。
+- T2 本机 IT 非破坏性复用既有 `ai_video_test`：原 `av_ai_task`、`av_ai_task_execution`、`av_ai_task_attempt` 三表保持不变，测试只使用带随机后缀的隔离表并在每例结束精确清理。`videoops_agent_t2_it` 仅有该 schema 的 `CREATE/DROP/ALTER/SELECT/INSERT/UPDATE/DELETE`；`ALTER` 只用于当前迁移 CHECK 的真实验证，仍无全局、旧开发库或 Grant Option 权限。凭据保存在 Git 忽略、当前用户 ACL 的 DPAPI 载体。负责人已明确接受此前管理秘密只进入私有任务工具输出的风险并决定无需轮换；该值未进入仓库、命令参数、日志或持久环境，本轮不再检查或输出。
 - T2 的 completed 记录只在写入瞬间原子确认候选资产为当前 owner 的 ready、未删除视频输出；后续资产删除入口尚未增加“已被 AgentRun 引用”保护，属于使用该终态资产前必须处理的后续生命周期边界，不能把当前候选引用描述为永久可用。
 - T3 的历史 task-output 关联已由单条 owner-scoped task/resultAsset JOIN 收口，不再依赖项目 latest；本轮未连接真实 MySQL 执行该新增 SELECT，当前证据是 Mapper SQL 契约、Service 正反边界与同源码 package。生产发布前仍需在受控运行窗口补一次真实历史任务查询，不能把当前 mock/静态边界外推为生产证据。
 - T3 工具按 Unicode code point 限制口播文案，下层现有数字人 Service 仍按 UTF-16 `length()` 限制；极端 astral 字符输入可能在工具校验后由下层稳定拒绝。固定中文样例不受影响，当前不为未经过主链的字符边界扩张实现。
@@ -124,10 +130,11 @@
 | T4-E02 | T4 恢复次数语义与 Provider 接受后崩溃窗窄修复 | 当前窄修复 checkpoint 源码；本机 MySQL `ai_video_test` + 真实类型化工具、资源生成/生成 Service；最外层声音 Provider adapter 为 counting fake；未连接真实 Provider/OSS/Redis/HTTP | `branch:main; checkpoint:本提交; base:bc7ed68030729e1cba7a4315a5fb1ad9e483b8e0; input status paths:6; jar sha256:BFB02EF2EC8CA924F22E4F39E4D300A5A8A3DF292306642C43F6C9697DB4D56B` | `AgentRunOrchestrationServiceImplTest`；core `AgentRunPersistenceIT` 与 user `AgentRunCrashWindowIT` Failsafe；`AgentRunServiceImplTest`、`AgentToolServiceImplTest`；user-api package 与 fat JAR/current class SHA 对账；开发规范、diff/staged 秘密与媒体门禁；独立监督审查 | `PASS`（本机/试运行 merge checkpoint）：generation 0 初领、generation 1 首次 fresh 查询、generation 2 才耗尽，submit/status 各 1 且 taskId 不变；聚焦单元 33/33。core MySQL IT 5/5、user 崩溃窗 IT 1/1，failure/error/skipped 均为 0；故障发生于真实工具与生成链返回后、waiting CAS 前，fresh instance 以同一幂等键恢复原 job，Provider adapter=1、AgentRun/生成根任务各 1。随机七表残留 0，既有三张共享测试表仍为 3。当前 user-api package 成功，fat JAR 中编排类 SHA-256 与当前 `target/classes` 精确一致；独立审查为 `Accept for local/pilot merge checkpoint`，P0/P1=0。`NOT_RUN`：user 模块全量 Surefire（既有无关失败）、真实 Provider/OSS/Redis、HTTP/UI、真实 `videoops_agent_dev` 迁移与 T5；不冒充生产 ship-ready |
 | T5-E01 | T5 当前成品三层逐项质量验收 | 当前 T5 checkpoint 源码；T1 已授权下载的 ignored MP4、本机真实 FFprobe/FFmpeg；任务/项目/不可变版本事实只读准备后经生产质量入口验证；未连接 Provider/OSS/Redis/HTTP | `branch:main; checkpoint:本提交; base:a66c7cfbbb0de4c75a75c9cfc82deee442d84ccc; input status paths:25; jar sha256:E3C3EDB4DAF7C8ECF05B7AE2798AEB1E03ADF222D41139440178CF3B1ADE1115` | `TimelineOutputQualityServiceImplTest`、`CreationAssetServiceImplTest`、`TimelineDtoContractTest`、`TimelineServiceBoundaryTest`、`FfmpegTimelineMediaRenderServiceTest`、`AgentToolServiceImplTest`、`AgentRunOrchestrationServiceImplTest`；`TimelineOutputQualityLocalIT`；user-api package 与嵌套 T5 class 对账；开发规范、diff/staged 秘密与媒体门禁 | `PASS`（本机/试运行 checkpoint）：聚焦单元 77/77；真实 LocalIT 1/1，failure/error/skipped 均为 0。任务 `2088580140291354626`、output asset `2088580141574811650` 与不可变 render input `2088580140345880578` 被 owner-scoped 绑定；MySQL JSON 解析为 DTO 后使用同一 `JsonMapper` canonicalize 再校验 content hash，物理格式变化通过、语义变化失败。成品 5,244,591 bytes，SHA-256 `70AF66B5D57A43B3626DF1FE3C1CC85417010EC600C04050F3A93BA77FFEE0B7`；真实 FFprobe 与完整解码得到 25.8 秒、1080×1920、30 fps、H.264 + AAC。250/251 ms 由质量层基于 probe 事实判定；renderer 只保留来源、大小与 SHA fail-closed。固定 16 项结果为 9 `PASS`、7 `REVIEW`、0 `FAIL`，三层为 5/6/5，无总分；must/prohibited 未配置与 5 项感知事实不冒充 PASS。首次 LocalIT 仅在 FFmpeg 启动前拒绝 WinGet 链接，改用同一安装的真实可执行路径后 fresh 通过，旧红报告不作证据。当前 fat JAR 已核对嵌入 T5 质量类。`NOT_RUN`：真实 OSS/Provider、重新生成/付费、OCR/ASR/人脸/口型 evaluator、HTTP/UI、T6/T7 |
 | T5-E02 | T5 环境/损坏分类、语义标点与真实成品关联窄修复 | 当前 T5 窄修复源码；本机 MySQL `ai_video_test` 的生产 Mapper/Service；最外层为计数本地存储 adapter；T1 已授权下载的 ignored MP4 与本机真实 FFprobe/FFmpeg；未连接真实 OSS/Provider/Redis/HTTP/UI | `branch:main; checkpoint:本提交; base:7149489e65d9c7f3806eb2e5af41ef97f5ef5e8e; input status paths:14; jar bytes:188974617; jar sha256:DD624F8D4F0E54CB0C641D18D53AB4DFF52BB4BEA5F9B958AF6187C1670CA2A6` | 11 类聚焦测试；临时 `TimelineOutputQualityPersistenceIT` Failsafe 报告；当前 T1 MP4 与截断同字节流；user-api package 与 fat JAR/module/class 字节对账；开发规范、diff/staged 秘密与媒体门禁 | `PASS`（本机/试运行 checkpoint）：聚焦测试 98/98，failure/error/skipped 均为 0；其中原 77 项全部保留。临时真实边界 Failsafe 1/1、0 skip：生产 `CreationAssetMapper/Service` 在 `ai_video_test` 验证精确 owner/task/resultAsset/sourceRef 正例，跨 owner、错 task、错 asset 与错 sourceRef 均在本地存储读取前拒绝，随机表精确清理为 0；最外层本地 adapter 不冒充 OSS。当前 T1 MP4 为 5,244,591 bytes、SHA-256 `70AF66B5D57A43B3626DF1FE3C1CC85417010EC600C04050F3A93BA77FFEE0B7`，真实 FFprobe 与完整解码通过；截断同一字节流稳定判定媒体输入损坏。renderer 关闭、超时及存储不可达统一输出 5 项低置信 `REVIEW`，只有确证输入损坏才把 `media.playable` 判为高置信 `FAIL`。保存规范化、trusted/Whisper 对齐、ASS 与质量判定共用 `SubtitleDisplayNormalizer`：仅明确句读白名单可省略，`/`、`-`、`.`、`:` 默认保留，`3.14→314`、`12:30→1230`、`8/16→816` 与 `A-12→A12` 均拒绝，普通句读/空白仍可等价。旧 257 行 LocalIT 已删除；本次 248 行临时真实边界源码在验收后删除，未进入 checkpoint。当前 package 成功，fat JAR 内 core/infra 模块及四个关键 class 与当前构建输出字节一致。`NOT_RUN`：真实 OSS/Provider/Redis、HTTP/UI、重新生成或付费、T6/T7；P2 JSON 等值词法的更宽边界未扩张，仍以 DTO canonicalize 合同为准 |
+| T6-E01 | T6 有界依赖返工、三类批准与恢复控制面 | 当前 T6 checkpoint 源码；本机 MySQL `ai_video_test` 的真实事务/CAS；外层幂等 counting tool 与最外层声音 Provider adapter；未连接真实 Provider/OSS/Redis/HTTP/UI | `branch:main; checkpoint:本提交; base:ec8f288dca73d70ea50c16957e88fbbd6bce00b2; input status paths:26; migration sha256:66642F11397EE38968A8DEAC8B90118E3EB575585D41B23C823685AA479273D2; jar bytes:189025356; jar sha256:122870BBD03430578C840FEAEB16D2A9B7C332DD5B8CABF672A24451EE92F379` | 6 类聚焦单元；`AgentRunPersistenceIT`、`CreationTimelineIsolationIT`、`AgentRunCrashWindowIT` Failsafe；bootstrap validator/Pester；user-api clean package 与嵌套 core SHA 对账；开发规范、diff/staged 秘密与媒体门禁；独立 own-loop 复审 | `PASS`（本机/试运行 checkpoint）：聚焦单元 90/90；真实 MySQL 分别为 6/6、3/3、1/1，failure/error/skipped 均为 0。质量结果在持久边界重新解析固定 16 项并绑定 owner、render task、ready result asset 与 SHA，服务端复算返工/批准决定；`quality_repair_count` 与技术 retry/lease generation 独立且最多 2。字幕高置信失败只创建同一 video job 的新项目与 render，媒体失败只重 render；fresh context 对 project/render 各重入 2 次但唯一幂等身份各只接受 1 次，原 voice/video 两行与父子 ID 不变。initial/conditional/final 批准均由 owner/type/row/contract/approval revision、canonical personal workspace 与冻结 Brief 所需权限约束；MySQL 还直接拒绝 conditional/final 的 NULL evaluation 与终态批准的 NULL decider。Provider 接受后、waiting CAS 前崩溃由真实工具与生成 Service 证明 fresh replay 仍为同一 job、最外 adapter submit=1。条件批准按冻结合同进入 `waiting_input`，需新 Brief/Profile 与新 run，不冒充同 run 自动继续。随机表清理、旧三张共享测试表与双开发库拒绝已在本轮后置门禁通过；敏感环境残留 0。当前 clean package 的嵌套 core SHA 与当前 core artifact 精确一致；独立复审 P0/P1=0。`NOT_RUN`：同一测试进程内真实 Timeline application Service + AgentRun 的 monolithic crash E2E、迁移真实 `videoops_agent_dev`、真实 Provider/OSS/Redis、HTTP/UI、T7；组合证据不冒充生产 ship-ready |
 
 ## 下一条准确动作
 
-`T5 DONE`：形成窄修复 checkpoint 后，按负责人持续施工指令进入 T6 的依赖感知局部返工纵切面；T5 与 T6 保持独立提交。
+`T7 NOT_STARTED`：先以本提交冻结 clean T6 checkpoint；随后按现有路线只启动 T7 产品入口、Trace/审批、演示与发布准备，不回写 T6 范围。
 
 ## 开工与收工协议
 

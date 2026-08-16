@@ -85,6 +85,19 @@ class AgentRunCrashWindowIT {
             IAgentRunService runService = context.getBean(IAgentRunService.class);
             var run = fixture.createGoldenRun(runService, principal, "accepted-before-waiting-cas");
             agentRunId = run.agentRunId();
+            var approval = runService.requestInitialApproval(principal,
+                new IAgentRunService.RequestInitialApprovalCommand(agentRunId, run.rowVersion(),
+                    run.contractRevision(), "批准冻结合同"));
+            var pendingApproval = runService.getOwnedRun(principal, agentRunId);
+            assertThat(pendingApproval.runStatus()).isEqualTo("waiting_approval");
+            var approvalReceipt = runService.decideApproval(principal, new IAgentRunService.DecideApprovalCommand(
+                agentRunId, pendingApproval.rowVersion(), pendingApproval.contractRevision(),
+                approval.approvalId(), approval.revision(), "initial", "approved", "批准"));
+            assertThat(approvalReceipt.runStatus()).isEqualTo("queued");
+            var approvedRun = runService.getOwnedRun(principal, agentRunId);
+            assertThat(approvedRun.runStatus()).isEqualTo("queued");
+            assertThat(approvedRun.approvalRevision()).isEqualTo(1L);
+            assertThat(approvedRun.pendingApprovalId()).isNull();
             IAgentToolService toolService = realToolService(context, principal);
             IAgentRunService crashingRunService = mock(IAgentRunService.class, delegatesTo(runService));
             AtomicReference<IAgentRunService.AgentRunLease> claimedLease = new AtomicReference<>();
@@ -100,7 +113,7 @@ class AgentRunCrashWindowIT {
                 crashingRunService, toolService, context.getBean(JsonMapper.class));
 
             assertThatThrownBy(() -> orchestration.advance(
-                principal, fixture.advance(run, "agent-it-crash-a")))
+                principal, fixture.advance(approvedRun, "agent-it-crash-a")))
                 .isInstanceOf(SimulatedProcessDeath.class);
             crashedLease = claimedLease.get();
             assertThat(crashedLease).isNotNull();

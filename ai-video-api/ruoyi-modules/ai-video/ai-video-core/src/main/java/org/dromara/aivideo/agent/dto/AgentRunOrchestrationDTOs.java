@@ -46,6 +46,18 @@ public final class AgentRunOrchestrationDTOs {
     ) {
     }
 
+    /** Human decision is fenced by the exact pending approval identity and revision. */
+    public record ApprovalCommand(
+        long agentRunId,
+        long expectedRowVersion,
+        long expectedContractRevision,
+        long approvalId,
+        long expectedApprovalRevision,
+        String approvalType,
+        boolean approved
+    ) {
+    }
+
     public record AdvanceResult(
         long agentRunId,
         String runStatus,
@@ -55,7 +67,25 @@ public final class AgentRunOrchestrationDTOs {
         Long candidateAssetId,
         List<String> missingFields,
         String errorCode,
-        String safeMessage
+        String safeMessage,
+        Long pendingApprovalId,
+        Long approvalRevision,
+        String approvalType
     ) {
+
+        public AdvanceResult(
+            long agentRunId,
+            String runStatus,
+            String outcome,
+            String waitingTaskSource,
+            Long waitingTaskId,
+            Long candidateAssetId,
+            List<String> missingFields,
+            String errorCode,
+            String safeMessage
+        ) {
+            this(agentRunId, runStatus, outcome, waitingTaskSource, waitingTaskId, candidateAssetId,
+                missingFields, errorCode, safeMessage, null, null, null);
+        }
     }
 }

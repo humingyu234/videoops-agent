@@ -8,12 +8,17 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.aivideo.agent.domain.AcceptanceProfileVersion;
 import org.dromara.aivideo.agent.domain.AgentRun;
+import org.dromara.aivideo.agent.domain.AgentRunApproval;
+import org.dromara.aivideo.agent.domain.AgentRunEvaluation;
 import org.dromara.aivideo.agent.domain.DeliveryBriefVersion;
 import org.dromara.aivideo.agent.mapper.AcceptanceProfileVersionMapper;
 import org.dromara.aivideo.agent.mapper.AgentRunMapper;
+import org.dromara.aivideo.agent.mapper.AgentRunApprovalMapper;
+import org.dromara.aivideo.agent.mapper.AgentRunEvaluationMapper;
 import org.dromara.aivideo.agent.mapper.DeliveryBriefVersionMapper;
 import org.dromara.aivideo.agent.service.IAgentRunService;
 import org.dromara.aivideo.identity.dto.AppPrincipalSnapshotDTO;
+import org.dromara.aivideo.timeline.dto.TimelineOutputQualityDTO;
 import org.dromara.common.core.exception.ServiceException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -28,6 +33,8 @@ import java.lang.reflect.Method;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -45,6 +52,12 @@ import static org.mockito.Mockito.when;
 class AgentRunServiceImplTest {
 
     private static final LocalDateTime DATABASE_NOW = LocalDateTime.of(2026, 8, 15, 12, 0);
+    private static final List<String> QUALITY_CODES = List.of(
+        "media.playable", "media.container_codec", "media.video_dimensions", "media.audio_present",
+        "media.duration", "content.script_integrity", "content.must_include", "content.prohibited",
+        "subtitle.text_integrity", "subtitle.safe_area", "subtitle.timing",
+        "perceptual.identity_similarity", "perceptual.lip_sync", "perceptual.voice_consistency",
+        "perceptual.visual_stability", "style.tone_match");
 
     @Mock
     private DeliveryBriefVersionMapper briefMapper;
@@ -52,12 +65,18 @@ class AgentRunServiceImplTest {
     private AcceptanceProfileVersionMapper profileMapper;
     @Mock
     private AgentRunMapper runMapper;
+    @Mock
+    private AgentRunEvaluationMapper evaluationMapper;
+    @Mock
+    private AgentRunApprovalMapper approvalMapper;
 
     @BeforeAll
     static void initializeMybatisMetadata() {
         initialize(DeliveryBriefVersion.class);
         initialize(AcceptanceProfileVersion.class);
         initialize(AgentRun.class);
+        initialize(AgentRunEvaluation.class);
+        initialize(AgentRunApproval.class);
     }
 
     @Test
@@ -161,6 +180,8 @@ class AgentRunServiceImplTest {
         assertThat(runCaptor.getValue().getRowVersion()).isZero();
         assertThat(runCaptor.getValue().getLeaseGeneration()).isZero();
         assertThat(runCaptor.getValue().getRetryCount()).isZero();
+        assertThat(runCaptor.getValue().getQualityRepairCount()).isZero();
+        assertThat(runCaptor.getValue().getApprovalRevision()).isZero();
     }
 
     @Test
@@ -195,6 +216,133 @@ class AgentRunServiceImplTest {
         assertThat(service().blockForInput(principal(7), command)).isFalse();
         verify(runMapper, org.mockito.Mockito.times(2)).blockForInput(eq(501L), eq(7L), eq(1L), eq(0L),
             eq("MISSING_SCRIPT"), eq("请确认口播文案"), eq(DATABASE_NOW));
+    }
+
+    @Test
+    void recordsAndReplaysOnlyTheExactFencedQualityCandidate() {
+        when(runMapper.selectDatabaseNow()).thenReturn(DATABASE_NOW);
+        when(evaluationMapper.insertFenced(any(AgentRunEvaluation.class), anyString(), anyLong(), anyLong(),
+            anyLong(), anyString(), any(LocalDateTime.class))).thenReturn(1);
+        IAgentRunService.LeaseProof lease = new IAgentRunService.LeaseProof(501, 3, 1, 2, "raw-token");
+        var command = new IAgentRunService.RecordQualityEvaluationCommand(lease, 0, 701, 901, 801,
+            "quality-rules-1", qualityJson(701, 901, Set.of("subtitle.timing"),
+                TimelineOutputQualityDTO.Confidence.HIGH),
+            "repair", "timeline_render");
+
+        var created = service().recordQualityEvaluation(principal(7), command);
+
+        assertThat(created.agentRunId()).isEqualTo(501L);
+        assertThat(created.qualityJson()).contains("subtitle.text");
+        assertThat(created.qualityDigest()).matches("[0-9a-f]{64}");
+        ArgumentCaptor<AgentRunEvaluation> inserted = ArgumentCaptor.forClass(AgentRunEvaluation.class);
+        verify(evaluationMapper).insertFenced(inserted.capture(), eq("a".repeat(64)), eq(1L), eq(3L), eq(2L),
+            org.mockito.ArgumentMatchers.matches("[0-9a-f]{64}"), eq(DATABASE_NOW));
+        assertThat(inserted.getValue().getCandidateNo()).isZero();
+
+        when(evaluationMapper.selectOne(any(Wrapper.class))).thenReturn(inserted.getValue());
+        when(evaluationMapper.countFencedReplay(anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyLong(),
+            anyLong(), anyString(), anyString(), anyString(), anyString(), anyLong(), anyLong(), anyLong(),
+            anyString(), any(LocalDateTime.class))).thenReturn(1L);
+        var replay = service().recordQualityEvaluation(principal(7), command);
+        assertThat(replay.evaluationId()).isEqualTo(created.evaluationId());
+
+        reset(evaluationMapper);
+        when(evaluationMapper.insertFenced(any(AgentRunEvaluation.class), anyString(), anyLong(), anyLong(),
+            anyLong(), anyString(), any(LocalDateTime.class))).thenReturn(1);
+        var conditional = service().recordQualityEvaluation(principal(7),
+            new IAgentRunService.RecordQualityEvaluationCommand(lease, 0, 702, 902, 802,
+                "quality-rules-1", qualityJson(702, 902, Set.of("subtitle.timing"),
+                TimelineOutputQualityDTO.Confidence.LOW), "conditional", "timeline_render"));
+        assertThat(conditional.decision()).isEqualTo("conditional");
+        assertThat(conditional.repairScope()).isEqualTo("timeline_render");
+    }
+
+    @Test
+    void recomputesQualityIdentityAndRoutesUnscopedOrMalformedFactsToManual() {
+        when(runMapper.selectDatabaseNow()).thenReturn(DATABASE_NOW);
+        when(evaluationMapper.insertFenced(any(AgentRunEvaluation.class), anyString(), anyLong(), anyLong(),
+            anyLong(), anyString(), any(LocalDateTime.class))).thenReturn(1);
+        IAgentRunService.LeaseProof lease = new IAgentRunService.LeaseProof(501, 3, 1, 2, "raw-token");
+
+        assertThatThrownBy(() -> service().recordQualityEvaluation(principal(7),
+            new IAgentRunService.RecordQualityEvaluationCommand(lease, 0, 701, 901, 801,
+                "quality-rules-1", qualityJson(701, 901, Set.of("subtitle.timing"),
+                TimelineOutputQualityDTO.Confidence.HIGH), "final", "none")))
+            .isInstanceOf(ServiceException.class)
+            .hasMessageContaining("复算");
+        assertThatThrownBy(() -> service().recordQualityEvaluation(principal(7),
+            new IAgentRunService.RecordQualityEvaluationCommand(lease, 0, 701, 901, 801,
+                "quality-rules-1", qualityJson(999, 901, Set.of(),
+                TimelineOutputQualityDTO.Confidence.HIGH), "final", "none")))
+            .isInstanceOf(ServiceException.class)
+            .hasMessageContaining("身份");
+
+        var style = service().recordQualityEvaluation(principal(7),
+            new IAgentRunService.RecordQualityEvaluationCommand(lease, 0, 702, 902, 802,
+                "quality-rules-1", qualityJson(702, 902, Set.of("style.tone_match"),
+                TimelineOutputQualityDTO.Confidence.HIGH), "manual", "manual"));
+        assertThat(style.decision()).isEqualTo("manual");
+        assertThat(style.repairScope()).isEqualTo("manual");
+
+        String malformedQuality = """
+            {"taskId":"703","assetId":"903","artifactSha256":"%s","inputVersionId":"1",
+             "timelineContentHash":"%s","ruleSetVersion":"quality-rules-1","criteria":[]}
+            """.formatted("a".repeat(64), "b".repeat(64));
+        var malformed = service().recordQualityEvaluation(principal(7),
+            new IAgentRunService.RecordQualityEvaluationCommand(lease, 0, 703, 903, 803,
+                "quality-rules-1", malformedQuality, "manual", "manual"));
+        assertThat(malformed.decision()).isEqualTo("manual");
+        assertThat(malformed.repairScope()).isEqualTo("manual");
+    }
+
+    @Test
+    void persistsInitialAndFinalApprovalTransitionsWithExactRevision() {
+        AgentRun queued = run(501, 7, "queued", 0, 0);
+        queued.setRequestDigest("a".repeat(64));
+        when(runMapper.selectOne(any(Wrapper.class))).thenReturn(queued);
+        when(approvalMapper.insert(any(AgentRunApproval.class))).thenReturn(1);
+        when(runMapper.selectDatabaseNow()).thenReturn(DATABASE_NOW);
+        when(runMapper.requestInitialApproval(anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyLong(),
+            any(LocalDateTime.class))).thenReturn(1);
+
+        var initial = service().requestInitialApproval(principal(7),
+            new IAgentRunService.RequestInitialApprovalCommand(501, 0, 1, "确认按冻结交付合同执行"));
+
+        assertThat(initial.approvalType()).isEqualTo("initial");
+        assertThat(initial.revision()).isEqualTo(1L);
+        assertThat(initial.subjectDigest()).matches("[0-9a-f]{64}");
+        when(approvalMapper.decidePending(anyLong(), anyLong(), anyLong(), anyString(), anyLong(), anyLong(),
+            anyLong(), anyString(), anyString(), any(LocalDateTime.class))).thenReturn(1);
+        when(runMapper.approveInitial(anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyLong(),
+            any(LocalDateTime.class))).thenReturn(1);
+        var approved = service().decideApproval(principal(7), new IAgentRunService.DecideApprovalCommand(
+            501, 1, 1, initial.approvalId(), 1, "initial", "approved", "负责人确认执行"));
+        assertThat(approved.runStatus()).isEqualTo("queued");
+
+        AgentRun waiting = run(502, 7, "waiting_external_task", 4, 2);
+        waiting.setQualityRepairCount(1L);
+        waiting.setApprovalRevision(1L);
+        AgentRunEvaluation evaluation = evaluation(601, 502, 7, 1, 702, 902, 802, "final", "none");
+        reset(runMapper, evaluationMapper, approvalMapper);
+        when(runMapper.selectOne(any(Wrapper.class))).thenReturn(waiting);
+        when(evaluationMapper.selectOne(any(Wrapper.class))).thenReturn(evaluation);
+        when(approvalMapper.insert(any(AgentRunApproval.class))).thenReturn(1);
+        when(runMapper.selectDatabaseNow()).thenReturn(DATABASE_NOW);
+        when(runMapper.requestQualityApproval(anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyString(),
+            anyLong(), anyLong(), anyLong(), anyString(), any(LocalDateTime.class))).thenReturn(1);
+        var lease = new IAgentRunService.LeaseProof(502, 4, 1, 2, "raw-token");
+        var finalApproval = service().requestQualityApproval(principal(7),
+            new IAgentRunService.RequestQualityApprovalCommand(lease, 601, "final", "确认交付候选 1"));
+        assertThat(finalApproval.evaluationId()).isEqualTo(601L);
+        assertThat(finalApproval.revision()).isEqualTo(2L);
+
+        when(approvalMapper.decidePending(anyLong(), anyLong(), anyLong(), anyString(), anyLong(), anyLong(),
+            anyLong(), anyString(), anyString(), any(LocalDateTime.class))).thenReturn(1);
+        when(runMapper.approveFinal(anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyString(),
+            anyString(), any(LocalDateTime.class))).thenReturn(1);
+        var completed = service().decideApproval(principal(7), new IAgentRunService.DecideApprovalCommand(
+            502, 5, 1, finalApproval.approvalId(), 2, "final", "approved", "最终成品确认交付"));
+        assertThat(completed.runStatus()).isEqualTo("completed");
     }
 
     @Test
@@ -426,12 +574,30 @@ class AgentRunServiceImplTest {
         String stopCas = updateSql("stopOwnedRun");
         assertThat(stopCas).contains("owner_user_id = #{ownerUserId}",
             "contract_revision = #{expectedContractRevision}", "row_version = #{expectedRowVersion}",
-            "run_status IN ('queued', 'waiting_input', 'running', 'waiting_external_task')",
+            "run_status IN ('queued', 'waiting_input', 'waiting_approval', 'running', 'waiting_external_task')",
             "lease_owner = NULL", "lease_token_digest = NULL", "waiting_task_source = NULL",
             "waiting_task_id = NULL", "waiting_contract_revision = NULL", "finished_at = #{databaseNow}");
         String waitingRecovery = updateSql("recoverWaitingLease");
         assertThat(waitingRecovery).contains("resume_after <= #{databaseNow}",
             "lease_expires_at <= #{databaseNow}", "waiting_task_source", "waiting_task_id");
+        String evaluationCas = insertSql(AgentRunEvaluationMapper.class, "insertFenced");
+        assertThat(evaluationCas).contains("run.quality_repair_count = #{row.candidateNo}",
+            "run.lease_token_digest = #{leaseTokenDigest}", "task.task_status = 'success'",
+            "asset.usage_origin = 'timeline_render_output'", "asset.source_ref_id = task.task_id",
+            "asset.sha256 = #{artifactSha256}", "project.owner_user_id = run.owner_user_id");
+        String qualityApprovalCas = updateSql("requestQualityApproval");
+        assertThat(qualityApprovalCas).contains("run_status = 'waiting_approval'",
+            "run.candidate_asset_id = evaluation.result_asset_id", "run.lease_token_digest = NULL",
+            "evaluation.candidate_no = run.quality_repair_count", "evaluation.decision = #{requiredDecision}");
+        String repairCas = updateSql("startQualityRepair");
+        assertThat(repairCas).contains("quality_repair_count = run.quality_repair_count + 1",
+            "run.quality_repair_count < 2", "#{repairScope} = 'render'",
+            "next_task.resource_id = old_task.resource_id", "#{repairScope} = 'timeline_render'",
+            "next_project.source_ref_id = old_project.source_ref_id").doesNotContain("retry_count =");
+        String finalCas = updateSql("approveFinal");
+        assertThat(finalCas).contains("approval.approval_type = 'final'", "evaluation.decision = 'final'",
+            "task.result_asset_id = evaluation.result_asset_id", "asset.asset_status = 'ready'",
+            "asset.usage_origin = 'timeline_render_output'", "run.run_status = 'completed'");
         Method databaseClock = List.of(AgentRunMapper.class.getDeclaredMethods()).stream()
             .filter(candidate -> candidate.getName().equals("selectDatabaseNow"))
             .findFirst()
@@ -440,7 +606,32 @@ class AgentRunServiceImplTest {
     }
 
     private AgentRunServiceImpl service() {
-        return new AgentRunServiceImpl(briefMapper, profileMapper, runMapper, JsonMapper.builder().build());
+        return new AgentRunServiceImpl(briefMapper, profileMapper, runMapper, evaluationMapper, approvalMapper,
+            JsonMapper.builder().build());
+    }
+
+    private String qualityJson(long taskId, long assetId, Set<String> failures,
+                               TimelineOutputQualityDTO.Confidence failureConfidence) {
+        List<TimelineOutputQualityDTO.Criterion> criteria = QUALITY_CODES.stream().map(code -> {
+            TimelineOutputQualityDTO.Layer layer = code.startsWith("media.")
+                ? TimelineOutputQualityDTO.Layer.MEDIA
+                : code.startsWith("perceptual.") || code.startsWith("style.")
+                ? TimelineOutputQualityDTO.Layer.PERCEPTUAL : TimelineOutputQualityDTO.Layer.CONTENT_LAYOUT;
+            boolean subjective = layer == TimelineOutputQualityDTO.Layer.PERCEPTUAL;
+            return new TimelineOutputQualityDTO.Criterion(code, layer, "rule-v1",
+                failures.contains(code) ? TimelineOutputQualityDTO.Verdict.FAIL
+                    : subjective ? TimelineOutputQualityDTO.Verdict.REVIEW : TimelineOutputQualityDTO.Verdict.PASS,
+                failures.contains(code) ? failureConfidence
+                    : subjective ? TimelineOutputQualityDTO.Confidence.LOW : TimelineOutputQualityDTO.Confidence.HIGH,
+                Map.of());
+        }).toList();
+        try {
+            return JsonMapper.builder().build().writeValueAsString(new TimelineOutputQualityDTO(
+                Long.toString(taskId), Long.toString(assetId), "a".repeat(64), "1", "b".repeat(64),
+                "quality-rules-1", criteria));
+        } catch (Exception exception) {
+            throw new IllegalStateException(exception);
+        }
     }
 
     private AppPrincipalSnapshotDTO principal(long userId) {
@@ -484,8 +675,29 @@ class AgentRunServiceImplTest {
         run.setRowVersion(rowVersion);
         run.setLeaseGeneration(generation);
         run.setRetryCount(0L);
+        run.setQualityRepairCount(0L);
+        run.setApprovalRevision(0L);
         run.setStateChangedAt(DATABASE_NOW);
         return run;
+    }
+
+    private AgentRunEvaluation evaluation(long evaluationId, long runId, long owner, long candidateNo,
+                                          long taskId, long assetId, long projectId,
+                                          String decision, String repairScope) {
+        AgentRunEvaluation row = new AgentRunEvaluation();
+        row.setEvaluationId(evaluationId);
+        row.setAgentRunId(runId);
+        row.setOwnerUserId(owner);
+        row.setCandidateNo(candidateNo);
+        row.setRenderTaskId(taskId);
+        row.setResultAssetId(assetId);
+        row.setProjectId(projectId);
+        row.setRuleSetVersion("quality-rules-1");
+        row.setQualityJson("{\"criteria\":[]}");
+        row.setQualityDigest("c".repeat(64));
+        row.setDecision(decision);
+        row.setRepairScope(repairScope);
+        return row;
     }
 
     private String updateSql(String methodName) {
@@ -494,6 +706,14 @@ class AgentRunServiceImplTest {
             .findFirst()
             .orElseThrow();
         return String.join(" ", method.getAnnotation(Update.class).value());
+    }
+
+    private String insertSql(Class<?> mapperType, String methodName) {
+        Method method = List.of(mapperType.getDeclaredMethods()).stream()
+            .filter(candidate -> candidate.getName().equals(methodName))
+            .findFirst()
+            .orElseThrow();
+        return String.join(" ", method.getAnnotation(org.apache.ibatis.annotations.Insert.class).value());
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})

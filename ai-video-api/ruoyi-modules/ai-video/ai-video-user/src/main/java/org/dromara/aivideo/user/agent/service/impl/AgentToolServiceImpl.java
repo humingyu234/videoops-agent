@@ -168,12 +168,25 @@ public class AgentToolServiceImpl implements IAgentToolService {
         AiTaskDTO task = requireRenderTask(taskService.getOwned(context.taskScope(), args.taskId()));
         requireStableFailure(task.status(), task.errorCode(), task.safeMessage());
         String resultAssetId = null;
+        String sourceType = null;
+        String sourceId = null;
+        String projectTitle = null;
         if (AiTaskStatus.SUCCESS.value().equals(task.status())) {
             resultAssetId = requireOutput(context.actorId(), task).asset().assetId();
+            ICreationProjectService.CreationProjectDTO project = projectService.getOwned(
+                context.actorId(), task.projectId());
+            if (project == null || !"digital_human_job".equals(project.sourceType())
+                || !task.projectId().equals(project.projectId()) || !isPositiveId(project.sourceId())
+                || project.projectTitle() == null || project.projectTitle().isBlank()) {
+                throw invalidResult();
+            }
+            sourceType = project.sourceType();
+            sourceId = project.sourceId();
+            projectTitle = project.projectTitle();
         }
         return new AgentToolDTOs.RenderStatusResult(task.taskId(), task.status(), task.stage(), task.progress(),
             task.projectId(), task.draftRevision(), resultAssetId, task.cancellable(), task.retryable(),
-            task.errorCode(), task.safeMessage());
+            task.errorCode(), task.safeMessage(), sourceType, sourceId, projectTitle);
     }
 
     private AgentToolDTOs.Result inspectOutput(AppPrincipalSnapshotDTO principal, JsonNode node) {
@@ -314,6 +327,17 @@ public class AgentToolServiceImpl implements IAgentToolService {
             return Long.parseLong(value);
         } catch (NumberFormatException exception) {
             throw invalidArguments();
+        }
+    }
+
+    private boolean isPositiveId(String value) {
+        if (value == null || !POSITIVE_ID.matcher(value).matches()) {
+            return false;
+        }
+        try {
+            return Long.parseLong(value) > 0;
+        } catch (NumberFormatException exception) {
+            return false;
         }
     }
 

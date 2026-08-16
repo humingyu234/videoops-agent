@@ -9,6 +9,8 @@ import org.dromara.aivideo.agent.dto.AgentRunOrchestrationDTOs;
 import org.dromara.aivideo.agent.dto.AgentToolDTOs;
 import org.dromara.aivideo.agent.mapper.AcceptanceProfileVersionMapper;
 import org.dromara.aivideo.agent.mapper.AgentRunMapper;
+import org.dromara.aivideo.agent.mapper.AgentRunApprovalMapper;
+import org.dromara.aivideo.agent.mapper.AgentRunEvaluationMapper;
 import org.dromara.aivideo.agent.mapper.DeliveryBriefVersionMapper;
 import org.dromara.aivideo.agent.service.IAgentRunOrchestrationService;
 import org.dromara.aivideo.agent.service.IAgentRunService;
@@ -18,6 +20,7 @@ import org.dromara.aivideo.agent.service.impl.AgentRunServiceImpl;
 import org.dromara.aivideo.identity.dto.AppPrincipalSnapshotDTO;
 import org.dromara.aivideo.identity.dto.AppWorkspaceSessionSnapshotDTO;
 import org.dromara.aivideo.testsupport.LocalIntegrationEnvironment;
+import org.dromara.aivideo.timeline.dto.TimelineOutputQualityDTO;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.mybatis.handler.InjectionMetaObjectHandler;
 import org.junit.jupiter.api.AfterEach;
@@ -30,6 +33,9 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.MapPropertySource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
 import tools.jackson.databind.json.JsonMapper;
 
 import javax.sql.DataSource;
@@ -75,8 +81,16 @@ class AgentRunPersistenceIT {
     private static final String DH_JOB = "digitalHumanJob";
     private static final String CREATION_PROJECT = "creationProject";
     private static final String CREATION_ASSET = "creationAsset";
-    private static final Pattern SAFE_TABLE = Pattern.compile("a(?:db|ap|run|at|dh|cp|ca)_it_[a-f0-9]{32}");
+    private static final String EVALUATION = "evaluation";
+    private static final String APPROVAL = "approval";
+    private static final Pattern SAFE_TABLE = Pattern.compile("a(?:db|ap|run|at|dh|cp|ca|re|ra)_it_[a-f0-9]{32}");
     private static final Pattern CHECK_NAME = Pattern.compile("CONSTRAINT\\s+[A-Za-z0-9_]+\\s+CHECK");
+    private static final List<String> QUALITY_CODES = List.of(
+        "media.playable", "media.container_codec", "media.video_dimensions", "media.audio_present",
+        "media.duration", "content.script_integrity", "content.must_include", "content.prohibited",
+        "subtitle.text_integrity", "subtitle.safe_area", "subtitle.timing",
+        "perceptual.identity_similarity", "perceptual.lip_sync", "perceptual.voice_consistency",
+        "perceptual.visual_stability", "style.tone_match");
     private static final Map<String, String> SOURCE_TABLES = Map.of(
         BRIEF, "av_delivery_brief_version",
         PROFILE, "av_acceptance_profile_version",
@@ -84,7 +98,9 @@ class AgentRunPersistenceIT {
         AI_TASK, "av_ai_task",
         DH_JOB, "av_dh_generation_job",
         CREATION_PROJECT, "av_creation_project",
-        CREATION_ASSET, "av_creation_asset"
+        CREATION_ASSET, "av_creation_asset",
+        EVALUATION, "av_agent_run_evaluation",
+        APPROVAL, "av_agent_run_approval"
     );
 
     private final Map<String, String> tables = new LinkedHashMap<>();
@@ -99,18 +115,26 @@ class AgentRunPersistenceIT {
         tables.put(DH_JOB, "adh_it_" + suffix);
         tables.put(CREATION_PROJECT, "acp_it_" + suffix);
         tables.put(CREATION_ASSET, "aca_it_" + suffix);
+        tables.put(EVALUATION, "are_it_" + suffix);
+        tables.put(APPROVAL, "ara_it_" + suffix);
 
         String migration = Files.readString(findRepositoryRoot().resolve(
             "docs/sql/videoops-agent/mysql/100_agent_run_schema.sql"), StandardCharsets.UTF_8);
+        String qualityMigration = Files.readString(findRepositoryRoot().resolve(
+            "docs/sql/videoops-agent/mysql/120_agent_run_quality_control.sql"), StandardCharsets.UTF_8);
         try (Connection connection = ENV.openMySqlConnection(); Statement statement = connection.createStatement()) {
             for (String key : List.of(BRIEF, PROFILE, RUN)) {
                 String ddl = extractAndRewriteDdl(migration, SOURCE_TABLES.get(key), table(key));
                 statement.execute(RUN.equals(key) ? applyOrchestrationStateToCreateDdl(ddl) : ddl);
             }
+            applyQualityControlState(statement);
             statement.execute(minimalAiTaskDdl());
             statement.execute(minimalDigitalHumanJobDdl());
             statement.execute(minimalCreationProjectDdl());
             statement.execute(minimalCreationAssetDdl());
+            statement.execute(extractAndRewriteDdl(qualityMigration, SOURCE_TABLES.get(EVALUATION),
+                table(EVALUATION)));
+            statement.execute(extractAndRewriteDdl(qualityMigration, SOURCE_TABLES.get(APPROVAL), table(APPROVAL)));
         }
     }
 
@@ -120,7 +144,8 @@ class AgentRunPersistenceIT {
             return;
         }
         try (Connection connection = ENV.openMySqlConnection(); Statement statement = connection.createStatement()) {
-            for (String key : List.of(RUN, CREATION_ASSET, AI_TASK, CREATION_PROJECT, DH_JOB, PROFILE, BRIEF)) {
+            for (String key : List.of(APPROVAL, EVALUATION, RUN, CREATION_ASSET, AI_TASK, CREATION_PROJECT,
+                DH_JOB, PROFILE, BRIEF)) {
                 String table = table(key);
                 statement.execute("DROP TABLE IF EXISTS `" + table + "`");
             }
@@ -132,8 +157,11 @@ class AgentRunPersistenceIT {
         try (Connection connection = ENV.openMySqlConnection()) {
             assertThat(databaseName(connection)).isEqualTo("ai_video_test");
             assertThat(foreignKeyCount(connection)).isZero();
-            assertThat(checkConstraintCount(connection)).isEqualTo(25L);
+            assertThat(checkConstraintCount(connection)).isEqualTo(26L);
             assertThat(columnCount(connection, "retry_count")).isEqualTo(1L);
+            assertThat(columnCount(connection, "quality_repair_count")).isEqualTo(1L);
+            assertThat(columnCount(connection, "pending_approval_id")).isEqualTo(1L);
+            assertThat(columnCount(connection, "approval_revision")).isEqualTo(1L);
             assertThat(temporalPrecision(connection, "lease_expires_at")).isEqualTo(6L);
             assertThat(temporalPrecision(connection, "resume_after")).isEqualTo(6L);
         }
@@ -274,9 +302,14 @@ class AgentRunPersistenceIT {
                 connection, 126L, 301L, 101L, 111L)).isInstanceOf(SQLException.class);
             assertThatThrownBy(() -> insertCompletedRunWithNullDigest(
                 connection, 127L, 301L, 101L, 111L)).isInstanceOf(SQLException.class);
+            assertThatThrownBy(() -> insertConditionalApprovalWithNullEvaluation(connection, 128L, 301L))
+                .isInstanceOf(SQLException.class);
+            assertThatThrownBy(() -> insertApprovedApprovalWithNullDecider(connection, 129L, 301L))
+                .isInstanceOf(SQLException.class);
             assertThat(rowCount(connection, table(BRIEF))).isEqualTo(3L);
             assertThat(rowCount(connection, table(PROFILE))).isEqualTo(3L);
             assertThat(rowCount(connection, table(RUN))).isEqualTo(2L);
+            assertThat(rowCount(connection, table(APPROVAL))).isZero();
         }
     }
 
@@ -480,7 +513,14 @@ class AgentRunPersistenceIT {
             var run = createGoldenRun(runService, principal, "golden-chain");
             agentRunId = run.agentRunId();
 
-            var waiting = orchestration.advance(principal, advance(run, "agent-it-golden-a"));
+            var initialApproval = orchestration.advance(principal, advance(run, "agent-it-golden-approval"));
+            assertThat(initialApproval.runStatus()).isEqualTo("waiting_approval");
+            var pendingInitial = runService.getOwnedRun(principal, agentRunId);
+            orchestration.decideApproval(principal, new AgentRunOrchestrationDTOs.ApprovalCommand(
+                agentRunId, pendingInitial.rowVersion(), pendingInitial.contractRevision(),
+                initialApproval.pendingApprovalId(), initialApproval.approvalRevision(), "initial", true));
+            var approved = runService.getOwnedRun(principal, agentRunId);
+            var waiting = orchestration.advance(principal, advance(approved, "agent-it-golden-a"));
             assertThat(waiting.runStatus()).isEqualTo("waiting_external_task");
             assertThat(waiting.waitingTaskSource()).isEqualTo("digital_human_generation");
             assertThat(waiting.waitingTaskId()).isEqualTo(voiceJobId);
@@ -541,7 +581,13 @@ class AgentRunPersistenceIT {
             IAgentRunService runService = context.getBean(IAgentRunService.class);
             IAgentRunOrchestrationService orchestration = context.getBean(IAgentRunOrchestrationService.class);
             var run = runService.getOwnedRun(principal, agentRunId);
-            var completed = orchestration.advance(principal, advance(run, "agent-it-golden-d"));
+            var finalApproval = orchestration.advance(principal, advance(run, "agent-it-golden-d"));
+            assertThat(finalApproval.runStatus()).isEqualTo("waiting_approval");
+            var pendingFinal = runService.getOwnedRun(principal, agentRunId);
+            var completed = orchestration.decideApproval(principal,
+                new AgentRunOrchestrationDTOs.ApprovalCommand(agentRunId, pendingFinal.rowVersion(),
+                    pendingFinal.contractRevision(), finalApproval.pendingApprovalId(),
+                    finalApproval.approvalRevision(), "final", true));
             assertThat(completed.runStatus()).isEqualTo("completed");
             assertThat(completed.candidateAssetId()).isEqualTo(outputAssetId);
 
@@ -557,6 +603,180 @@ class AgentRunPersistenceIT {
         assertThat(tools.acceptedSubmissions("render_timeline")).isEqualTo(1);
         try (Connection connection = ENV.openMySqlConnection()) {
             assertThat(rowCount(connection, table(RUN))).isEqualTo(1L);
+        }
+    }
+
+    @Test
+    void freshContextReplaysOneAcceptedQualityRepairAndKeepsApprovalFencesExact() throws Exception {
+        long ownerUserId = 651L;
+        long sourceVoiceJobId = 2500L;
+        long sourceVideoJobId = 2501L;
+        long firstProjectId = 2502L;
+        long firstRenderTaskId = 2503L;
+        long firstOutputAssetId = 2504L;
+        long repairProjectId = 2505L;
+        long repairRenderTaskId = 2506L;
+        long repairOutputAssetId = 2507L;
+        AppPrincipalSnapshotDTO principal = orchestrationPrincipal(ownerUserId);
+        AppPrincipalSnapshotDTO otherOwner = orchestrationPrincipal(ownerUserId + 1L);
+
+        try (Connection connection = ENV.openMySqlConnection()) {
+            insertDigitalHumanJob(connection, sourceVoiceJobId, ownerUserId,
+                "voice_generate", "succeeded", null);
+            insertDigitalHumanJob(connection, sourceVideoJobId, ownerUserId,
+                "video_generate", "succeeded", sourceVoiceJobId);
+            insertCreationProject(connection, firstProjectId, ownerUserId, sourceVideoJobId);
+            insertCreationProject(connection, repairProjectId, ownerUserId, sourceVideoJobId);
+            insertAiTask(connection, firstRenderTaskId, ownerUserId, "timeline_render", "success",
+                firstOutputAssetId, "creation_project", firstProjectId);
+            insertAiTask(connection, repairRenderTaskId, ownerUserId, "timeline_render", "running",
+                null, "creation_project", repairProjectId);
+            insertCreationAsset(connection, firstOutputAssetId, ownerUserId,
+                "timeline_render_output", firstRenderTaskId, "ready");
+        }
+
+        long agentRunId;
+        try (AnnotationConfigApplicationContext context = openServiceContext()) {
+            IAgentRunService service = context.getBean(IAgentRunService.class);
+            var created = createGoldenRun(service, principal, "quality-repair-crash");
+            agentRunId = created.agentRunId();
+            var approval = service.requestInitialApproval(principal,
+                new IAgentRunService.RequestInitialApprovalCommand(agentRunId, created.rowVersion(),
+                    created.contractRevision(), "批准冻结合同"));
+            var waitingApproval = service.getOwnedRun(principal, agentRunId);
+
+            assertThatThrownBy(() -> service.decideApproval(otherOwner,
+                new IAgentRunService.DecideApprovalCommand(agentRunId, waitingApproval.rowVersion(),
+                    waitingApproval.contractRevision(), approval.approvalId(), approval.revision(),
+                    "initial", "approved", "cross-owner")))
+                .isInstanceOf(ServiceException.class);
+            assertThatThrownBy(() -> service.decideApproval(principal,
+                new IAgentRunService.DecideApprovalCommand(agentRunId, waitingApproval.rowVersion() - 1,
+                    waitingApproval.contractRevision(), approval.approvalId(), approval.revision(),
+                    "initial", "approved", "stale")))
+                .isInstanceOf(ServiceException.class);
+            assertThatThrownBy(() -> service.decideApproval(principal,
+                new IAgentRunService.DecideApprovalCommand(agentRunId, waitingApproval.rowVersion(),
+                    waitingApproval.contractRevision(), approval.approvalId(), approval.revision(),
+                    "final", "approved", "wrong-type")))
+                .isInstanceOf(ServiceException.class);
+
+            service.decideApproval(principal, new IAgentRunService.DecideApprovalCommand(
+                agentRunId, waitingApproval.rowVersion(), waitingApproval.contractRevision(),
+                approval.approvalId(), approval.revision(), "initial", "approved", "批准"));
+            var queued = service.getOwnedRun(principal, agentRunId);
+            var lease = service.claim(principal, new IAgentRunService.ClaimAgentRunCommand(
+                agentRunId, queued.rowVersion(), queued.contractRevision(), "agent-it-quality-a", 300));
+            assertThat(lease).isNotNull();
+            assertThat(service.waitForExternalTask(principal, new IAgentRunService.WaitForExternalTaskCommand(
+                lease.proof(), "ai_task", firstRenderTaskId, Instant.now().plusSeconds(1)))).isNotNull();
+        }
+        try (Connection connection = ENV.openMySqlConnection()) {
+            assertThat(makeWaitingDue(connection, ownerUserId, agentRunId,
+                "ai_task", firstRenderTaskId)).isEqualTo(1);
+        }
+
+        CountingGoldenToolService tools = new CountingGoldenToolService(
+            0L, sourceVideoJobId, firstProjectId, firstRenderTaskId, firstOutputAssetId,
+            repairProjectId, repairRenderTaskId, repairOutputAssetId,
+            quality(firstRenderTaskId, firstOutputAssetId, Set.of("subtitle.timing")),
+            quality(repairRenderTaskId, repairOutputAssetId, Set.of("subtitle.timing")),
+            () -> fenceAcceptedRepair(agentRunId, ownerUserId, firstRenderTaskId));
+        tools.completeRender();
+
+        try (AnnotationConfigApplicationContext context = openServiceContext(tools)) {
+            IAgentRunService service = context.getBean(IAgentRunService.class);
+            IAgentRunOrchestrationService orchestration = context.getBean(IAgentRunOrchestrationService.class);
+            var run = service.getOwnedRun(principal, agentRunId);
+            var conflicted = orchestration.advance(principal, advance(run, "agent-it-quality-b"));
+            assertThat(conflicted.outcome()).isEqualTo("state_conflict");
+        }
+
+        try (AnnotationConfigApplicationContext context = openServiceContext(tools)) {
+            IAgentRunService service = context.getBean(IAgentRunService.class);
+            IAgentRunOrchestrationService orchestration = context.getBean(IAgentRunOrchestrationService.class);
+            var run = service.getOwnedRun(principal, agentRunId);
+            var waiting = orchestration.advance(principal, advance(run, "agent-it-quality-c"));
+            assertThat(waiting.runStatus()).isEqualTo("waiting_external_task");
+            assertThat(waiting.waitingTaskId()).isEqualTo(repairRenderTaskId);
+
+            var persisted = service.getOwnedRun(principal, agentRunId);
+            assertThat(persisted.qualityRepairCount()).isEqualTo(1L);
+            assertThat(persisted.retryCount()).isZero();
+            assertThat(service.getOwnedQualityEvaluation(principal, agentRunId, 0).renderTaskId())
+                .isEqualTo(firstRenderTaskId);
+        }
+
+        try (Connection connection = ENV.openMySqlConnection()) {
+            updateAiTask(connection, repairRenderTaskId, ownerUserId,
+                "timeline_render", "success", repairOutputAssetId);
+            insertCreationAsset(connection, repairOutputAssetId, ownerUserId,
+                "timeline_render_output", repairRenderTaskId, "ready");
+            assertThat(makeWaitingDue(connection, ownerUserId, agentRunId,
+                "ai_task", repairRenderTaskId)).isEqualTo(1);
+        }
+        tools.completeRepairRender();
+
+        try (AnnotationConfigApplicationContext context = openServiceContext(tools)) {
+            IAgentRunService service = context.getBean(IAgentRunService.class);
+            IAgentRunOrchestrationService orchestration = context.getBean(IAgentRunOrchestrationService.class);
+            var run = service.getOwnedRun(principal, agentRunId);
+            var approvalRequired = orchestration.advance(principal, advance(run, "agent-it-quality-d"));
+            assertThat(approvalRequired.runStatus()).isEqualTo("waiting_approval");
+            assertThat(approvalRequired.approvalType()).isEqualTo("conditional");
+            assertThat(service.getOwnedQualityEvaluation(principal, agentRunId, 1).repairScope())
+                .isEqualTo("timeline_render");
+            var pending = service.getOwnedRun(principal, agentRunId);
+            int callsBeforeDecisions = tools.totalInvocations();
+
+            assertThatThrownBy(() -> service.decideApproval(otherOwner,
+                new IAgentRunService.DecideApprovalCommand(agentRunId, pending.rowVersion(),
+                    pending.contractRevision(), approvalRequired.pendingApprovalId(),
+                    approvalRequired.approvalRevision(), "conditional", "approved", "cross-owner")))
+                .isInstanceOf(ServiceException.class);
+            assertThatThrownBy(() -> service.decideApproval(principal,
+                new IAgentRunService.DecideApprovalCommand(agentRunId, pending.rowVersion(),
+                    pending.contractRevision(), approvalRequired.pendingApprovalId(),
+                    approvalRequired.approvalRevision(), "final", "approved", "wrong-type")))
+                .isInstanceOf(ServiceException.class);
+            assertThatThrownBy(() -> service.decideApproval(principal,
+                new IAgentRunService.DecideApprovalCommand(agentRunId, pending.rowVersion() - 1,
+                    pending.contractRevision(), approvalRequired.pendingApprovalId(),
+                    approvalRequired.approvalRevision(), "conditional", "approved", "stale")))
+                .isInstanceOf(ServiceException.class);
+
+            var blocked = orchestration.decideApproval(principal,
+                new AgentRunOrchestrationDTOs.ApprovalCommand(agentRunId, pending.rowVersion(),
+                    pending.contractRevision(), approvalRequired.pendingApprovalId(),
+                    approvalRequired.approvalRevision(), "conditional", true));
+            assertThat(blocked.runStatus()).isEqualTo("waiting_input");
+            assertThat(service.getOwnedRun(principal, agentRunId).errorCode())
+                .isEqualTo("APPROVAL_INPUT_REQUIRED");
+            assertThat(tools.totalInvocations()).isEqualTo(callsBeforeDecisions);
+        }
+        assertThat(tools.acceptedSubmissions("prepare_timeline_project")).isEqualTo(1);
+        assertThat(tools.acceptedSubmissions("render_timeline")).isEqualTo(1);
+        assertThat(tools.submitInvocations("prepare_timeline_project")).isEqualTo(2);
+        assertThat(tools.submitInvocations("render_timeline")).isEqualTo(2);
+        assertThat(tools.acceptedSubmissions("submit_voice_generation")).isZero();
+        assertThat(tools.acceptedSubmissions("submit_digital_human_video")).isZero();
+        try (Connection connection = ENV.openMySqlConnection()) {
+            assertThat(rowCount(connection, table(EVALUATION))).isEqualTo(2L);
+            assertThat(rowCount(connection, table(APPROVAL))).isEqualTo(2L);
+            assertThat(rowCount(connection, table(AI_TASK))).isEqualTo(2L);
+            assertThat(rowCount(connection, table(DH_JOB))).isEqualTo(2L);
+            try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT COUNT(*) FROM `%s`
+                WHERE owner_user_id = ?
+                  AND ((id = ? AND job_type = 'voice_generate' AND parent_job_id IS NULL)
+                    OR (id = ? AND job_type = 'video_generate' AND parent_job_id = ?))
+                """.formatted(table(DH_JOB)))) {
+                statement.setLong(1, ownerUserId);
+                statement.setLong(2, sourceVoiceJobId);
+                statement.setLong(3, sourceVideoJobId);
+                statement.setLong(4, sourceVoiceJobId);
+                assertThat(singleLong(statement)).isEqualTo(2L);
+            }
         }
     }
 
@@ -581,7 +801,13 @@ class AgentRunPersistenceIT {
             IAgentRunOrchestrationService orchestration = context.getBean(IAgentRunOrchestrationService.class);
             var created = createGoldenRun(runService, principal, "cancel-chain");
             agentRunId = created.agentRunId();
-            var waiting = orchestration.advance(principal, advance(created, "agent-it-cancel"));
+            var initialApproval = orchestration.advance(principal, advance(created, "agent-it-cancel-approval"));
+            var pendingInitial = runService.getOwnedRun(principal, agentRunId);
+            orchestration.decideApproval(principal, new AgentRunOrchestrationDTOs.ApprovalCommand(
+                agentRunId, pendingInitial.rowVersion(), pendingInitial.contractRevision(),
+                initialApproval.pendingApprovalId(), initialApproval.approvalRevision(), "initial", true));
+            var approved = runService.getOwnedRun(principal, agentRunId);
+            var waiting = orchestration.advance(principal, advance(approved, "agent-it-cancel"));
             assertThat(waiting.waitingTaskId()).isEqualTo(voiceJobId);
 
             var persistedWaiting = runService.getOwnedRun(principal, agentRunId);
@@ -684,6 +910,25 @@ class AgentRunPersistenceIT {
             """.formatted(table(RUN)), ownerUserId, runId, taskSource, taskId);
     }
 
+    private void fenceAcceptedRepair(long runId, long ownerUserId, long waitingTaskId) {
+        try (Connection connection = ENV.openMySqlConnection()) {
+            int updated = update(connection, """
+                UPDATE `%s`
+                SET row_version = row_version + 1,
+                    lease_expires_at = DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 1 SECOND),
+                    resume_after = DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 1 SECOND)
+                WHERE owner_user_id = ? AND agent_run_id = ? AND run_status = 'waiting_external_task'
+                  AND waiting_task_source = 'ai_task' AND waiting_task_id = ?
+                  AND lease_token_digest IS NOT NULL
+                """.formatted(table(RUN)), ownerUserId, runId, waitingTaskId);
+            if (updated != 1) {
+                throw new IllegalStateException("expected one fenced waiting run");
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException("unable to fence accepted repair", exception);
+        }
+    }
+
     private void insertAiTask(Connection connection, long taskId, long ownerUserId, String taskType,
                               String taskStatus, Long resultAssetId) throws SQLException {
         insertAiTask(connection, taskId, ownerUserId, taskType, taskStatus, resultAssetId, null, null);
@@ -780,10 +1025,10 @@ class AgentRunPersistenceIT {
                                      String delFlag) throws SQLException {
         update(connection, """
             INSERT INTO `%s` (
-                asset_id, owner_user_id, asset_type, usage_origin, source_ref_id, asset_status, del_flag
-            ) VALUES (?, ?, 'video', ?, ?, ?, ?)
+                asset_id, owner_user_id, asset_type, usage_origin, source_ref_id, asset_status, sha256, del_flag
+            ) VALUES (?, ?, 'video', ?, ?, ?, ?, ?)
             """.formatted(table(CREATION_ASSET)),
-            assetId, ownerUserId, usageOrigin, sourceRefId, assetStatus, delFlag);
+            assetId, ownerUserId, usageOrigin, sourceRefId, assetStatus, "a".repeat(64), delFlag);
     }
 
     private void insertInvalidRunningRun(Connection connection, long runId, long ownerUserId,
@@ -844,6 +1089,31 @@ class AgentRunPersistenceIT {
                       'app_user', ?, ?, ?)
             """.formatted(table(RUN)), runId, ownerUserId, briefVersionId, profileVersionId,
             hash('b'), ownerUserId, ownerUserId, ownerUserId);
+    }
+
+    private void insertConditionalApprovalWithNullEvaluation(Connection connection, long approvalId,
+                                                              long ownerUserId) throws SQLException {
+        update(connection, """
+            INSERT INTO `%s` (
+                approval_id, agent_run_id, owner_user_id, evaluation_id, approval_type, approval_status,
+                subject_digest, revision, request_summary, actor_type, actor_id, create_by, update_by
+            ) VALUES (?, 901, ?, NULL, 'conditional', 'pending', ?, 1, 'invalid null evaluation',
+                      'app_user', ?, ?, ?)
+            """.formatted(table(APPROVAL)), approvalId, ownerUserId, hash('9'),
+            ownerUserId, ownerUserId, ownerUserId);
+    }
+
+    private void insertApprovedApprovalWithNullDecider(Connection connection, long approvalId,
+                                                       long ownerUserId) throws SQLException {
+        update(connection, """
+            INSERT INTO `%s` (
+                approval_id, agent_run_id, owner_user_id, evaluation_id, approval_type, approval_status,
+                subject_digest, revision, request_summary, decision_summary, decided_by, decided_at,
+                actor_type, actor_id, create_by, update_by
+            ) VALUES (?, 902, ?, NULL, 'initial', 'approved', ?, 1, 'invalid null decider',
+                      'approved without actor', NULL, UTC_TIMESTAMP(6), 'app_user', ?, ?, ?)
+            """.formatted(table(APPROVAL)), approvalId, ownerUserId, hash('8'),
+            ownerUserId, ownerUserId, ownerUserId);
     }
 
     private int update(Connection connection, String sql, Object... values) throws SQLException {
@@ -951,7 +1221,9 @@ class AgentRunPersistenceIT {
                 SOURCE_TABLES.get(AI_TASK), table(AI_TASK),
                 SOURCE_TABLES.get(DH_JOB), table(DH_JOB),
                 SOURCE_TABLES.get(CREATION_PROJECT), table(CREATION_PROJECT),
-                SOURCE_TABLES.get(CREATION_ASSET), table(CREATION_ASSET)
+                SOURCE_TABLES.get(CREATION_ASSET), table(CREATION_ASSET),
+                SOURCE_TABLES.get(EVALUATION), table(EVALUATION),
+                SOURCE_TABLES.get(APPROVAL), table(APPROVAL)
             )));
         context.register(AgentRunPersistenceConfiguration.class);
         if (toolService != null) {
@@ -1018,6 +1290,7 @@ class AgentRunPersistenceIT {
                 result_asset_id BIGINT NULL,
                 resource_type VARCHAR(32) NULL,
                 resource_id BIGINT NULL,
+                input_version_id BIGINT NULL,
                 PRIMARY KEY (task_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """.formatted(table(AI_TASK));
@@ -1083,6 +1356,7 @@ class AgentRunPersistenceIT {
                 usage_origin VARCHAR(32) NOT NULL,
                 source_ref_id BIGINT NULL,
                 asset_status VARCHAR(16) NOT NULL,
+                sha256 CHAR(64) NOT NULL,
                 del_flag CHAR(1) NOT NULL,
                 PRIMARY KEY (asset_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -1147,6 +1421,90 @@ class AgentRunPersistenceIT {
         return upgraded;
     }
 
+    private void applyQualityControlState(Statement statement) throws SQLException {
+        String run = table(RUN);
+        statement.execute("""
+            ALTER TABLE `%s`
+                ADD COLUMN quality_repair_count BIGINT NOT NULL DEFAULT 0 AFTER retry_count,
+                ADD COLUMN pending_approval_id BIGINT NULL AFTER quality_repair_count,
+                ADD COLUMN approval_revision BIGINT NOT NULL DEFAULT 0 AFTER pending_approval_id,
+                DROP CHECK %s_ck_3,
+                DROP CHECK %s_ck_4,
+                DROP CHECK %s_ck_7,
+                DROP CHECK %s_ck_8,
+                ADD CONSTRAINT %s_ck_3 CHECK (
+                    run_status IN (
+                        'queued', 'running', 'waiting_input', 'waiting_approval',
+                        'waiting_external_task', 'completed', 'failed', 'cancelled'
+                    )
+                ),
+                ADD CONSTRAINT %s_ck_4 CHECK (
+                    row_version >= 0 AND lease_generation >= 0 AND retry_count >= 0
+                    AND quality_repair_count BETWEEN 0 AND 2 AND approval_revision >= 0
+                ),
+                ADD CONSTRAINT %s_ck_7 CHECK (
+                    (
+                        run_status = 'waiting_external_task'
+                        AND waiting_task_source IS NOT NULL
+                        AND waiting_task_source IN ('digital_human_generation', 'ai_task')
+                        AND waiting_task_id IS NOT NULL
+                        AND waiting_task_id > 0
+                        AND waiting_contract_revision IS NOT NULL
+                        AND waiting_contract_revision = contract_revision
+                        AND resume_after IS NOT NULL
+                    )
+                    OR
+                    (
+                        run_status = 'waiting_approval'
+                        AND resume_after IS NULL
+                        AND (
+                            (waiting_task_source IS NULL AND waiting_task_id IS NULL
+                                AND waiting_contract_revision IS NULL AND candidate_asset_id IS NULL)
+                            OR
+                            (waiting_task_source IS NOT NULL AND waiting_task_source = 'ai_task'
+                                AND waiting_task_id IS NOT NULL AND waiting_task_id > 0
+                                AND waiting_contract_revision IS NOT NULL
+                                AND waiting_contract_revision = contract_revision
+                                AND candidate_asset_id IS NOT NULL AND candidate_asset_id > 0)
+                        )
+                    )
+                    OR
+                    (
+                        run_status NOT IN ('waiting_external_task', 'waiting_approval')
+                        AND waiting_task_source IS NULL AND waiting_task_id IS NULL
+                        AND waiting_contract_revision IS NULL
+                    )
+                ),
+                ADD CONSTRAINT %s_ck_8 CHECK (
+                    (run_status = 'completed' AND candidate_asset_id IS NOT NULL AND candidate_asset_id > 0
+                        AND result_summary_json IS NOT NULL
+                        AND result_digest IS NOT NULL
+                        AND result_digest REGEXP '^[0-9a-f]{64}$'
+                        AND error_code IS NULL AND error_summary IS NULL)
+                    OR (run_status = 'failed' AND candidate_asset_id IS NULL
+                        AND result_summary_json IS NULL AND result_digest IS NULL
+                        AND error_code IS NOT NULL AND error_summary IS NOT NULL)
+                    OR (run_status = 'cancelled' AND candidate_asset_id IS NULL
+                        AND result_summary_json IS NULL AND result_digest IS NULL)
+                    OR (run_status = 'waiting_input' AND candidate_asset_id IS NULL
+                        AND result_summary_json IS NULL AND result_digest IS NULL
+                        AND error_code IS NOT NULL AND error_summary IS NOT NULL)
+                    OR (run_status = 'waiting_approval'
+                        AND (candidate_asset_id IS NULL OR candidate_asset_id > 0)
+                        AND result_summary_json IS NULL AND result_digest IS NULL
+                        AND error_code IS NULL AND error_summary IS NULL)
+                    OR (run_status IN ('queued', 'running', 'waiting_external_task')
+                        AND candidate_asset_id IS NULL AND result_summary_json IS NULL
+                        AND result_digest IS NULL AND error_code IS NULL AND error_summary IS NULL)
+                ),
+                ADD CONSTRAINT %s_ck_12 CHECK (
+                    (run_status = 'waiting_approval' AND pending_approval_id IS NOT NULL
+                        AND pending_approval_id > 0 AND approval_revision > 0)
+                    OR (run_status <> 'waiting_approval' AND pending_approval_id IS NULL)
+                )
+            """.formatted(run, run, run, run, run, run, run, run, run, run));
+    }
+
     private String table(String key) {
         String table = tables.get(key);
         if (table == null) {
@@ -1173,6 +1531,24 @@ class AgentRunPersistenceIT {
         throw new IllegalStateException("Unable to locate VideoOps Agent repository root");
     }
 
+    private static TimelineOutputQualityDTO quality(long taskId, long assetId, Set<String> failures) {
+        List<TimelineOutputQualityDTO.Criterion> criteria = QUALITY_CODES.stream().map(code -> {
+            TimelineOutputQualityDTO.Layer layer = code.startsWith("media.")
+                ? TimelineOutputQualityDTO.Layer.MEDIA
+                : code.startsWith("perceptual.") || code.startsWith("style.")
+                ? TimelineOutputQualityDTO.Layer.PERCEPTUAL : TimelineOutputQualityDTO.Layer.CONTENT_LAYOUT;
+            boolean subjective = layer == TimelineOutputQualityDTO.Layer.PERCEPTUAL;
+            return new TimelineOutputQualityDTO.Criterion(code, layer, "rule-v1",
+                failures.contains(code) ? TimelineOutputQualityDTO.Verdict.FAIL
+                    : subjective ? TimelineOutputQualityDTO.Verdict.REVIEW : TimelineOutputQualityDTO.Verdict.PASS,
+                failures.contains(code) ? TimelineOutputQualityDTO.Confidence.HIGH
+                    : subjective ? TimelineOutputQualityDTO.Confidence.LOW : TimelineOutputQualityDTO.Confidence.HIGH,
+                Map.of());
+        }).toList();
+        return new TimelineOutputQualityDTO(Long.toString(taskId), Long.toString(assetId), "a".repeat(64),
+            "1", "b".repeat(64), "t5-quality-1", criteria);
+    }
+
     private static String hash(char character) {
         return String.valueOf(character).repeat(64);
     }
@@ -1193,20 +1569,45 @@ class AgentRunPersistenceIT {
         private final long projectId;
         private final long renderTaskId;
         private final long outputAssetId;
+        private final long repairProjectId;
+        private final long repairRenderTaskId;
+        private final long repairOutputAssetId;
+        private final TimelineOutputQualityDTO outputQuality;
+        private final TimelineOutputQualityDTO repairOutputQuality;
+        private final Runnable afterFirstRepairRenderAccepted;
         private final Map<String, Integer> invocations = new LinkedHashMap<>();
         private final Map<String, String> accepted = new LinkedHashMap<>();
         private boolean voiceCompleted;
         private boolean voiceConfirmed;
         private boolean videoCompleted;
         private boolean renderCompleted;
+        private boolean repairRenderCompleted;
+        private boolean repairFenceTriggered;
 
         private CountingGoldenToolService(long voiceJobId, long videoJobId, long projectId,
-                                          long renderTaskId, long outputAssetId) {
+                                           long renderTaskId, long outputAssetId) {
+            this(voiceJobId, videoJobId, projectId, renderTaskId, outputAssetId, projectId, renderTaskId,
+                outputAssetId, quality(renderTaskId, outputAssetId, Set.of()),
+                quality(renderTaskId, outputAssetId, Set.of()), null);
+        }
+
+        private CountingGoldenToolService(long voiceJobId, long videoJobId, long projectId,
+                                          long renderTaskId, long outputAssetId, long repairProjectId,
+                                          long repairRenderTaskId, long repairOutputAssetId,
+                                          TimelineOutputQualityDTO outputQuality,
+                                          TimelineOutputQualityDTO repairOutputQuality,
+                                          Runnable afterFirstRepairRenderAccepted) {
             this.voiceJobId = voiceJobId;
             this.videoJobId = videoJobId;
             this.projectId = projectId;
             this.renderTaskId = renderTaskId;
             this.outputAssetId = outputAssetId;
+            this.repairProjectId = repairProjectId;
+            this.repairRenderTaskId = repairRenderTaskId;
+            this.repairOutputAssetId = repairOutputAssetId;
+            this.outputQuality = outputQuality;
+            this.repairOutputQuality = repairOutputQuality;
+            this.afterFirstRepairRenderAccepted = afterFirstRepairRenderAccepted;
         }
 
         @Override
@@ -1231,32 +1632,26 @@ class AgentRunPersistenceIT {
                 }
                 case "prepare_timeline_project" -> {
                     requireId(call, "videoJobId", videoJobId);
-                    yield new AgentToolDTOs.ProjectResult(Long.toString(projectId), "editing", "1",
+                    accept(call);
+                    long selectedProjectId = repairCall(call) ? repairProjectId : projectId;
+                    yield new AgentToolDTOs.ProjectResult(Long.toString(selectedProjectId), "editing", "1",
                         1080, 1920, 30, 30_000L);
                 }
                 case "render_timeline" -> {
                     accept(call);
-                    requireId(call, "projectId", projectId);
-                    yield new AgentToolDTOs.RenderTaskResult(Long.toString(renderTaskId), "running",
-                        "rendering", Long.toString(projectId), "1");
-                }
-                case "get_timeline_render_status" -> {
-                    requireId(call, renderTaskId);
-                    yield new AgentToolDTOs.RenderStatusResult(Long.toString(renderTaskId),
-                        renderCompleted ? "success" : "running", renderCompleted ? "completed" : "rendering",
-                        renderCompleted ? 100 : 50, Long.toString(projectId), "1",
-                        renderCompleted ? Long.toString(outputAssetId) : null, !renderCompleted, false, null, null);
-                }
-                case "inspect_timeline_output" -> {
-                    requireId(call, renderTaskId);
-                    if (!renderCompleted) {
-                        throw new IllegalStateException("render is not complete");
+                    boolean repair = repairCall(call);
+                    long selectedProjectId = repair ? repairProjectId : projectId;
+                    long selectedTaskId = repair ? repairRenderTaskId : renderTaskId;
+                    requireId(call, "projectId", selectedProjectId);
+                    if (repair && !repairFenceTriggered && afterFirstRepairRenderAccepted != null) {
+                        repairFenceTriggered = true;
+                        afterFirstRepairRenderAccepted.run();
                     }
-                    yield new AgentToolDTOs.OutputInspectionResult(Long.toString(renderTaskId),
-                        Long.toString(outputAssetId), "ready", "video", "timeline_render_output", "video/mp4",
-                        "a".repeat(64), 1_024L, 30_000L, 1080, 1920, true, true,
-                        "/api/studio/creation-assets/" + outputAssetId + "/content");
+                    yield new AgentToolDTOs.RenderTaskResult(Long.toString(selectedTaskId), "running",
+                        "rendering", Long.toString(selectedProjectId), "1");
                 }
+                case "get_timeline_render_status" -> renderStatus(call);
+                case "inspect_timeline_output" -> output(call);
                 default -> throw new IllegalArgumentException("unexpected tool: " + call.toolName());
             };
         }
@@ -1270,6 +1665,46 @@ class AgentRunPersistenceIT {
                 return generation(videoJobId, voiceJobId, "video_generate", videoCompleted, false);
             }
             throw new IllegalArgumentException("unexpected generation job");
+        }
+
+        private AgentToolDTOs.RenderStatusResult renderStatus(AgentToolDTOs.Call call) {
+            long taskId = Long.parseLong(text(call, "taskId"));
+            if (taskId == renderTaskId) {
+                return new AgentToolDTOs.RenderStatusResult(Long.toString(renderTaskId),
+                    renderCompleted ? "success" : "running", renderCompleted ? "completed" : "rendering",
+                    renderCompleted ? 100 : 50, Long.toString(projectId), "1",
+                    renderCompleted ? Long.toString(outputAssetId) : null, !renderCompleted, false, null, null,
+                    "digital_human_job", Long.toString(videoJobId), "T6 quality repair");
+            }
+            if (taskId == repairRenderTaskId) {
+                return new AgentToolDTOs.RenderStatusResult(Long.toString(repairRenderTaskId),
+                    repairRenderCompleted ? "success" : "running",
+                    repairRenderCompleted ? "completed" : "rendering", repairRenderCompleted ? 100 : 50,
+                    Long.toString(repairProjectId), "1",
+                    repairRenderCompleted ? Long.toString(repairOutputAssetId) : null,
+                    !repairRenderCompleted, false, null, null,
+                    "digital_human_job", Long.toString(videoJobId), "T6 quality repair");
+            }
+            throw new IllegalArgumentException("unexpected render task");
+        }
+
+        private AgentToolDTOs.OutputInspectionResult output(AgentToolDTOs.Call call) {
+            long taskId = Long.parseLong(text(call, "taskId"));
+            long assetId;
+            TimelineOutputQualityDTO quality;
+            if (taskId == renderTaskId && renderCompleted) {
+                assetId = outputAssetId;
+                quality = outputQuality;
+            } else if (taskId == repairRenderTaskId && repairRenderCompleted) {
+                assetId = repairOutputAssetId;
+                quality = repairOutputQuality;
+            } else {
+                throw new IllegalStateException("render is not complete");
+            }
+            return new AgentToolDTOs.OutputInspectionResult(Long.toString(taskId), Long.toString(assetId),
+                "ready", "video", "timeline_render_output", "video/mp4", "a".repeat(64), 1_024L,
+                30_000L, 1080, 1920, true, true,
+                "/api/studio/creation-assets/" + assetId + "/content", quality);
         }
 
         private AgentToolDTOs.GenerationJobResult generation(long jobId, Long parentJobId, String jobType,
@@ -1309,6 +1744,10 @@ class AgentRunPersistenceIT {
             return value.textValue();
         }
 
+        private boolean repairCall(AgentToolDTOs.Call call) {
+            return text(call, "idempotencyKey").contains("repair-");
+        }
+
         private synchronized void completeVoice() {
             voiceCompleted = true;
         }
@@ -1319,6 +1758,10 @@ class AgentRunPersistenceIT {
 
         private synchronized void completeRender() {
             renderCompleted = true;
+        }
+
+        private synchronized void completeRepairRender() {
+            repairRenderCompleted = true;
         }
 
         private synchronized int acceptedSubmissions(String toolName) {
@@ -1339,11 +1782,17 @@ record AgentRunTestTableNames(Map<String, String> values) {
 }
 
 @Configuration(proxyBeanMethods = false)
+@EnableTransactionManagement(proxyTargetClass = true)
 @MapperScan(basePackages = {
     "org.dromara.aivideo.agent.mapper",
     "org.dromara.aivideo.digitalhuman.mapper"
 })
 class AgentRunPersistenceConfiguration {
+
+    @Bean
+    PlatformTransactionManager transactionManager(DataSource dataSource) {
+        return new DataSourceTransactionManager(dataSource);
+    }
 
     @Bean
     DataSource dataSource(@Value("${agent-run.jdbc-url}") String jdbcUrl,
@@ -1377,8 +1826,11 @@ class AgentRunPersistenceConfiguration {
     IAgentRunService agentRunService(DeliveryBriefVersionMapper briefMapper,
                                      AcceptanceProfileVersionMapper profileMapper,
                                      AgentRunMapper runMapper,
+                                     AgentRunEvaluationMapper evaluationMapper,
+                                     AgentRunApprovalMapper approvalMapper,
                                      JsonMapper jsonMapper) {
-        return new AgentRunServiceImpl(briefMapper, profileMapper, runMapper, jsonMapper);
+        return new AgentRunServiceImpl(briefMapper, profileMapper, runMapper, evaluationMapper, approvalMapper,
+            jsonMapper);
     }
 }
 

@@ -140,6 +140,7 @@ class AgentToolServiceImplTest {
         AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
         AiTaskAccessScopeDTO scope = new AiTaskAccessScopeDTO(2001L, 1001L, "workspace-key");
         when(taskService.getOwned(scope, "801")).thenReturn(renderTask("success", "901"));
+        when(projectService.getOwned(1001L, "701")).thenReturn(project());
         lenient().when(projectService.getLatestOutputOwned(1001L, "701"))
             .thenReturn(new CreationOutputDTO("701", "902", "802", Instant.EPOCH));
         CreationAssetDTO outputAsset = outputAsset();
@@ -154,6 +155,9 @@ class AgentToolServiceImplTest {
             principal, call("inspect_timeline_output", json("taskId", "801")));
 
         assertThat(status.resultAssetId()).isEqualTo("901");
+        assertThat(status.sourceType()).isEqualTo("digital_human_job");
+        assertThat(status.sourceId()).isEqualTo("601");
+        assertThat(status.projectTitle()).isEqualTo("T3 黄金链");
         assertThat(inspection).satisfies(result -> {
             assertThat(result.assetId()).isEqualTo("901");
             assertThat(result.status()).isEqualTo("ready");

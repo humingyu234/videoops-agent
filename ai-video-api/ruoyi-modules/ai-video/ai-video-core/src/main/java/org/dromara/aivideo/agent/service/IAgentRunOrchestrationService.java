@@ -13,4 +13,7 @@ public interface IAgentRunOrchestrationService {
 
     AgentRunOrchestrationDTOs.AdvanceResult cancel(AppPrincipalSnapshotDTO principal,
                                                     AgentRunOrchestrationDTOs.CancelCommand command);
+
+    AgentRunOrchestrationDTOs.AdvanceResult decideApproval(
+        AppPrincipalSnapshotDTO principal, AgentRunOrchestrationDTOs.ApprovalCommand command);
 }

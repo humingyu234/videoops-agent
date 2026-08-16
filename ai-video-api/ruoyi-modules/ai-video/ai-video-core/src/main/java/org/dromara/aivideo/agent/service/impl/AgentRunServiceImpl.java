@@ -4,17 +4,24 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import org.dromara.aivideo.agent.domain.AcceptanceProfileVersion;
 import org.dromara.aivideo.agent.domain.AgentRun;
+import org.dromara.aivideo.agent.domain.AgentRunApproval;
+import org.dromara.aivideo.agent.domain.AgentRunEvaluation;
 import org.dromara.aivideo.agent.domain.DeliveryBriefVersion;
 import org.dromara.aivideo.agent.enums.AgentRunStatus;
 import org.dromara.aivideo.agent.mapper.AcceptanceProfileVersionMapper;
 import org.dromara.aivideo.agent.mapper.AgentRunMapper;
+import org.dromara.aivideo.agent.mapper.AgentRunApprovalMapper;
+import org.dromara.aivideo.agent.mapper.AgentRunEvaluationMapper;
 import org.dromara.aivideo.agent.mapper.DeliveryBriefVersionMapper;
+import org.dromara.aivideo.agent.service.AgentQualityReworkPolicy;
 import org.dromara.aivideo.agent.service.IAgentRunService;
 import org.dromara.aivideo.identity.dto.AppPrincipalSnapshotDTO;
+import org.dromara.aivideo.timeline.dto.TimelineOutputQualityDTO;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.mybatis.audit.AuditFillContext;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JsonParser;
 import tools.jackson.core.JsonToken;
 import tools.jackson.databind.JsonNode;
@@ -55,21 +62,34 @@ public class AgentRunServiceImpl implements IAgentRunService {
     private static final Pattern IDEMPOTENCY_KEY = Pattern.compile("[A-Za-z0-9._:-]{1,64}");
     private static final Pattern WORKER_ID = Pattern.compile("[A-Za-z0-9._:-]{1,128}");
     private static final Pattern ERROR_CODE = Pattern.compile("[A-Za-z0-9._:-]{1,64}");
+    private static final Pattern RULE_SET_VERSION = Pattern.compile("[A-Za-z0-9._:-]{1,32}");
     private static final Set<String> TASK_SOURCES = Set.of("digital_human_generation", "ai_task");
+    private static final Set<String> QUALITY_DECISIONS = Set.of("repair", "conditional", "final", "manual");
+    private static final Set<String> REPAIR_SCOPES = Set.of(
+        "render", "timeline_render", "video_downstream", "voice_downstream", "script_downstream", "manual", "none");
+    private static final Set<String> APPROVAL_TYPES = Set.of("initial", "conditional", "final");
+    private static final Set<String> APPROVAL_DECISIONS = Set.of("approved", "rejected");
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final DeliveryBriefVersionMapper briefMapper;
     private final AcceptanceProfileVersionMapper profileMapper;
     private final AgentRunMapper runMapper;
+    private final AgentRunEvaluationMapper evaluationMapper;
+    private final AgentRunApprovalMapper approvalMapper;
     private final JsonMapper jsonMapper;
+    private final AgentQualityReworkPolicy qualityPolicy = new AgentQualityReworkPolicy();
 
     public AgentRunServiceImpl(DeliveryBriefVersionMapper briefMapper,
                                AcceptanceProfileVersionMapper profileMapper,
                                AgentRunMapper runMapper,
+                               AgentRunEvaluationMapper evaluationMapper,
+                               AgentRunApprovalMapper approvalMapper,
                                JsonMapper jsonMapper) {
         this.briefMapper = Objects.requireNonNull(briefMapper, "briefMapper");
         this.profileMapper = Objects.requireNonNull(profileMapper, "profileMapper");
         this.runMapper = Objects.requireNonNull(runMapper, "runMapper");
+        this.evaluationMapper = Objects.requireNonNull(evaluationMapper, "evaluationMapper");
+        this.approvalMapper = Objects.requireNonNull(approvalMapper, "approvalMapper");
         this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
     }
 
@@ -208,6 +228,8 @@ public class AgentRunServiceImpl implements IAgentRunService {
         run.setRowVersion(0L);
         run.setLeaseGeneration(0L);
         run.setRetryCount(0L);
+        run.setQualityRepairCount(0L);
+        run.setApprovalRevision(0L);
         run.setStateChangedAt(databaseNow);
         auditCreate(run, owner);
         try {
@@ -256,6 +278,238 @@ public class AgentRunServiceImpl implements IAgentRunService {
         LocalDateTime now = databaseNow();
         return inAudit(owner, () -> runMapper.blockForInput(command.agentRunId(), owner,
             command.expectedContractRevision(), command.expectedRowVersion(), errorCode, errorSummary, now)) == 1;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public QualityEvaluationView recordQualityEvaluation(AppPrincipalSnapshotDTO principal,
+                                                         RecordQualityEvaluationCommand command) {
+        long owner = owner(principal);
+        if (command == null || !validLease(command.lease()) || command.candidateNo() < 0
+            || command.candidateNo() > 2 || command.renderTaskId() <= 0 || command.resultAssetId() <= 0
+            || command.projectId() <= 0 || !RULE_SET_VERSION.matcher(nullable(command.ruleSetVersion())).matches()
+            || !QUALITY_DECISIONS.contains(command.decision()) || !REPAIR_SCOPES.contains(command.repairScope())
+            || !validDecisionScope(command.decision(), command.repairScope())) {
+            throw invalid("AgentRun 质量事实无效");
+        }
+        String qualityJson = canonicalObject(command.qualityJson(), "AgentRun 质量事实");
+        String qualityDigest = sha256(qualityJson);
+        LeaseProof lease = command.lease();
+        TimelineOutputQualityDTO current = parseQuality(qualityJson);
+        if (current == null) {
+            throw invalid("AgentRun 质量事实结构无效");
+        }
+        PersistedQualityDecision recomputed = recomputeQualityDecision(
+            owner, lease.agentRunId(), command, current);
+        if (!Objects.equals(command.decision(), recomputed.decision())
+            || !Objects.equals(command.repairScope(), recomputed.repairScope())) {
+            throw invalid("AgentRun 质量判定与服务端复算不一致");
+        }
+        LocalDateTime now = databaseNow();
+        AgentRunEvaluation existing = findEvaluation(owner, lease.agentRunId(), command.candidateNo());
+        if (existing != null) {
+            return evaluationReplay(existing, command, qualityDigest, lease, now);
+        }
+
+        AgentRunEvaluation row = new AgentRunEvaluation();
+        row.setEvaluationId(IdWorker.getId());
+        row.setAgentRunId(lease.agentRunId());
+        row.setOwnerUserId(owner);
+        row.setCandidateNo(command.candidateNo());
+        row.setRenderTaskId(command.renderTaskId());
+        row.setResultAssetId(command.resultAssetId());
+        row.setProjectId(command.projectId());
+        row.setRuleSetVersion(command.ruleSetVersion());
+        row.setQualityJson(qualityJson);
+        row.setQualityDigest(qualityDigest);
+        row.setDecision(command.decision());
+        row.setRepairScope(command.repairScope());
+        auditCreate(row, owner);
+        try {
+            int inserted = inAudit(owner, () -> evaluationMapper.insertFenced(row, current.artifactSha256(),
+                lease.contractRevision(), lease.rowVersion(), lease.leaseGeneration(), sha256(lease.leaseToken()),
+                now));
+            return inserted == 1 ? toView(row) : null;
+        } catch (DuplicateKeyException exception) {
+            AgentRunEvaluation winner = findEvaluation(owner, lease.agentRunId(), command.candidateNo());
+            if (winner == null) {
+                throw conflict("AgentRun 质量事实创建冲突");
+            }
+            return evaluationReplay(winner, command, qualityDigest, lease, now);
+        }
+    }
+
+    @Override
+    public QualityEvaluationView getOwnedQualityEvaluation(AppPrincipalSnapshotDTO principal,
+                                                           long agentRunId,
+                                                           long candidateNo) {
+        long owner = owner(principal);
+        if (agentRunId <= 0 || candidateNo < 0 || candidateNo > 2) {
+            throw invalid("AgentRun 质量事实查询无效");
+        }
+        AgentRunEvaluation row = findEvaluation(owner, agentRunId, candidateNo);
+        if (row == null) {
+            throw notFound("AgentRun 质量事实不存在");
+        }
+        return toView(row);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ApprovalView requestInitialApproval(AppPrincipalSnapshotDTO principal,
+                                               RequestInitialApprovalCommand command) {
+        long owner = owner(principal);
+        if (command == null || command.agentRunId() <= 0 || command.expectedRowVersion() < 0
+            || command.expectedContractRevision() <= 0) {
+            throw invalid("AgentRun 初始批准请求无效");
+        }
+        String summary = requiredErrorSummary(command.requestSummary());
+        AgentRun run = requireExactRun(owner, command.agentRunId(), command.expectedRowVersion(),
+            command.expectedContractRevision(), AgentRunStatus.QUEUED);
+        long revision = number(run.getApprovalRevision()) + 1;
+        AgentRunApproval approval = newApproval(run, null, "initial",
+            sha256("initial\n" + run.getRequestDigest() + "\n" + run.getContractRevision()), revision, summary);
+        insertApproval(owner, approval);
+        LocalDateTime now = databaseNow();
+        int updated = inAudit(owner, () -> runMapper.requestInitialApproval(run.getAgentRunId(), owner,
+            run.getContractRevision(), run.getRowVersion(), approval.getApprovalId(), revision, now));
+        if (updated != 1) {
+            throw conflict("AgentRun 初始批准状态已变化");
+        }
+        return toView(approval);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ApprovalView requestQualityApproval(AppPrincipalSnapshotDTO principal,
+                                               RequestQualityApprovalCommand command) {
+        long owner = owner(principal);
+        if (command == null || !validLease(command.lease()) || command.evaluationId() <= 0
+            || !("conditional".equals(command.approvalType()) || "final".equals(command.approvalType()))) {
+            throw invalid("AgentRun 质量批准请求无效");
+        }
+        String summary = requiredErrorSummary(command.requestSummary());
+        LeaseProof lease = command.lease();
+        AgentRun run = requireExactRun(owner, lease.agentRunId(), lease.rowVersion(), lease.contractRevision(),
+            AgentRunStatus.WAITING_EXTERNAL_TASK);
+        AgentRunEvaluation evaluation = requireEvaluation(owner, command.evaluationId(), lease.agentRunId());
+        String requiredDecision = "final".equals(command.approvalType()) ? "final" : "conditional";
+        if (!(requiredDecision.equals(evaluation.getDecision())
+            || ("conditional".equals(requiredDecision) && "manual".equals(evaluation.getDecision())))) {
+            throw invalid("AgentRun 质量批准类型与质量决定不一致");
+        }
+        long revision = number(run.getApprovalRevision()) + 1;
+        AgentRunApproval approval = newApproval(run, evaluation.getEvaluationId(), command.approvalType(),
+            evaluation.getQualityDigest(), revision, summary);
+        insertApproval(owner, approval);
+        LocalDateTime now = databaseNow();
+        int updated = inAudit(owner, () -> runMapper.requestQualityApproval(run.getAgentRunId(), owner,
+            lease.contractRevision(), lease.rowVersion(), lease.leaseGeneration(), sha256(lease.leaseToken()),
+            evaluation.getEvaluationId(), approval.getApprovalId(), revision, evaluation.getDecision(), now));
+        if (updated != 1) {
+            throw conflict("AgentRun 质量批准状态已变化");
+        }
+        return toView(approval);
+    }
+
+    @Override
+    public ApprovalView getOwnedApproval(AppPrincipalSnapshotDTO principal, long agentRunId, long approvalId) {
+        long owner = owner(principal);
+        if (agentRunId <= 0 || approvalId <= 0) {
+            throw invalid("AgentRun 批准事实查询无效");
+        }
+        AgentRunApproval approval = approvalMapper.selectOne(new LambdaQueryWrapper<AgentRunApproval>()
+            .eq(AgentRunApproval::getApprovalId, approvalId)
+            .eq(AgentRunApproval::getAgentRunId, agentRunId)
+            .eq(AgentRunApproval::getOwnerUserId, owner));
+        if (approval == null) {
+            throw notFound("AgentRun 批准事实不存在");
+        }
+        return toView(approval);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ApprovalDecisionReceipt decideApproval(AppPrincipalSnapshotDTO principal,
+                                                   DecideApprovalCommand command) {
+        long owner = owner(principal);
+        if (command == null || command.agentRunId() <= 0 || command.expectedRowVersion() < 0
+            || command.expectedContractRevision() <= 0 || command.approvalId() <= 0
+            || command.expectedApprovalRevision() <= 0 || !APPROVAL_TYPES.contains(command.approvalType())
+            || !APPROVAL_DECISIONS.contains(command.decision())) {
+            throw invalid("AgentRun 批准决定无效");
+        }
+        String summary = requiredErrorSummary(command.decisionSummary());
+        LocalDateTime now = databaseNow();
+        int decided = inAudit(owner, () -> approvalMapper.decidePending(command.approvalId(),
+            command.agentRunId(), owner, command.approvalType(), command.expectedApprovalRevision(),
+            command.expectedContractRevision(), command.expectedRowVersion(), command.decision(), summary, now));
+        if (decided != 1) {
+            throw conflict("AgentRun 批准事实已变化");
+        }
+
+        int updated;
+        String runStatus;
+        if ("rejected".equals(command.decision())) {
+            updated = inAudit(owner, () -> runMapper.rejectApproval(command.agentRunId(), owner,
+                command.expectedContractRevision(), command.expectedRowVersion(), command.approvalId(),
+                command.expectedApprovalRevision(), summary, now));
+            runStatus = AgentRunStatus.CANCELLED.getValue();
+        } else if ("initial".equals(command.approvalType())) {
+            updated = inAudit(owner, () -> runMapper.approveInitial(command.agentRunId(), owner,
+                command.expectedContractRevision(), command.expectedRowVersion(), command.approvalId(),
+                command.expectedApprovalRevision(), now));
+            runStatus = AgentRunStatus.QUEUED.getValue();
+        } else if ("conditional".equals(command.approvalType())) {
+            updated = inAudit(owner, () -> runMapper.approveConditional(command.agentRunId(), owner,
+                command.expectedContractRevision(), command.expectedRowVersion(), command.approvalId(),
+                command.expectedApprovalRevision(), summary, now));
+            runStatus = AgentRunStatus.WAITING_INPUT.getValue();
+        } else {
+            String resultJson = canonicalObject("{\"approvalId\":" + command.approvalId()
+                + ",\"approvalRevision\":" + command.expectedApprovalRevision() + "}", "AgentRun 最终批准结果");
+            updated = inAudit(owner, () -> runMapper.approveFinal(command.agentRunId(), owner,
+                command.expectedContractRevision(), command.expectedRowVersion(), command.approvalId(),
+                command.expectedApprovalRevision(), resultJson, sha256(resultJson), now));
+            runStatus = AgentRunStatus.COMPLETED.getValue();
+        }
+        if (updated != 1) {
+            throw conflict("AgentRun 批准状态已变化");
+        }
+        return new ApprovalDecisionReceipt(command.agentRunId(), command.expectedRowVersion() + 1, runStatus,
+            command.approvalId(), command.expectedApprovalRevision(), command.decision());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public QualityRepairReceipt startQualityRepair(AppPrincipalSnapshotDTO principal,
+                                                   StartQualityRepairCommand command) {
+        long owner = owner(principal);
+        if (command == null || !validLease(command.lease()) || command.evaluationId() <= 0
+            || !("render".equals(command.repairScope()) || "timeline_render".equals(command.repairScope()))
+            || command.nextRenderTaskId() <= 0 || command.resumeAfter() == null) {
+            throw invalid("AgentRun 质量返工请求无效");
+        }
+        LeaseProof lease = command.lease();
+        AgentRunEvaluation evaluation = requireEvaluation(owner, command.evaluationId(), lease.agentRunId());
+        if (!"repair".equals(evaluation.getDecision())
+            || !command.repairScope().equals(evaluation.getRepairScope())) {
+            throw invalid("AgentRun 质量返工范围不一致");
+        }
+        LocalDateTime now = databaseNow();
+        LocalDateTime resumeAfter = futureResumeAfter(command.resumeAfter(), now);
+        int updated = inAudit(owner, () -> runMapper.startQualityRepair(lease.agentRunId(), owner,
+            lease.contractRevision(), lease.rowVersion(), lease.leaseGeneration(), sha256(lease.leaseToken()),
+            evaluation.getEvaluationId(), command.repairScope(), command.nextRenderTaskId(), resumeAfter, now));
+        if (updated != 1) {
+            return null;
+        }
+        LeaseProof nextLease = new LeaseProof(lease.agentRunId(), lease.rowVersion() + 1,
+            lease.contractRevision(), lease.leaseGeneration(), lease.leaseToken());
+        WaitingReceipt waiting = new WaitingReceipt(nextLease, "ai_task", command.nextRenderTaskId(),
+            command.resumeAfter());
+        return new QualityRepairReceipt(waiting, evaluation.getEvaluationId(), evaluation.getCandidateNo() + 1,
+            command.repairScope());
     }
 
     @Override
@@ -450,6 +704,148 @@ public class AgentRunServiceImpl implements IAgentRunService {
         return inAudit(owner, () -> runMapper.stopOwnedRun(command.agentRunId(), owner,
             command.expectedContractRevision(), command.expectedRowVersion(), terminal.getValue(),
             errorCode, errorSummary, now)) == 1;
+    }
+
+    private AgentRun requireExactRun(long owner, long runId, long rowVersion, long contractRevision,
+                                     AgentRunStatus expectedStatus) {
+        AgentRun run = requireRun(owner, runId);
+        if (!Objects.equals(run.getRowVersion(), rowVersion)
+            || !Objects.equals(run.getContractRevision(), contractRevision)
+            || status(run) != expectedStatus) {
+            throw conflict("AgentRun 状态已变化");
+        }
+        return run;
+    }
+
+    private AgentRunEvaluation findEvaluation(long owner, long runId, long candidateNo) {
+        return evaluationMapper.selectOne(new LambdaQueryWrapper<AgentRunEvaluation>()
+            .eq(AgentRunEvaluation::getOwnerUserId, owner)
+            .eq(AgentRunEvaluation::getAgentRunId, runId)
+            .eq(AgentRunEvaluation::getCandidateNo, candidateNo));
+    }
+
+    private AgentRunEvaluation requireEvaluation(long owner, long evaluationId, long runId) {
+        AgentRunEvaluation row = evaluationMapper.selectOne(new LambdaQueryWrapper<AgentRunEvaluation>()
+            .eq(AgentRunEvaluation::getEvaluationId, evaluationId)
+            .eq(AgentRunEvaluation::getAgentRunId, runId)
+            .eq(AgentRunEvaluation::getOwnerUserId, owner));
+        if (row == null) {
+            throw notFound("AgentRun 质量事实不存在");
+        }
+        return row;
+    }
+
+    private QualityEvaluationView evaluationReplay(AgentRunEvaluation existing,
+                                                   RecordQualityEvaluationCommand command,
+                                                   String qualityDigest,
+                                                   LeaseProof lease,
+                                                   LocalDateTime databaseNow) {
+        long matched = evaluationMapper.countFencedReplay(existing.getEvaluationId(), lease.agentRunId(),
+            existing.getOwnerUserId(), command.candidateNo(), command.renderTaskId(), command.resultAssetId(),
+            command.projectId(), command.ruleSetVersion(), qualityDigest, command.decision(), command.repairScope(),
+            lease.contractRevision(), lease.rowVersion(), lease.leaseGeneration(), sha256(lease.leaseToken()),
+            databaseNow);
+        if (matched != 1) {
+            throw conflict("AgentRun 质量事实幂等冲突或租约已变化");
+        }
+        return toView(existing);
+    }
+
+    private AgentRunApproval newApproval(AgentRun run, Long evaluationId, String type, String subjectDigest,
+                                         long revision, String summary) {
+        AgentRunApproval approval = new AgentRunApproval();
+        approval.setApprovalId(IdWorker.getId());
+        approval.setAgentRunId(run.getAgentRunId());
+        approval.setOwnerUserId(run.getOwnerUserId());
+        approval.setEvaluationId(evaluationId);
+        approval.setApprovalType(type);
+        approval.setApprovalStatus("pending");
+        approval.setSubjectDigest(subjectDigest);
+        approval.setRevision(revision);
+        approval.setRequestSummary(summary);
+        auditCreate(approval, run.getOwnerUserId());
+        return approval;
+    }
+
+    private void insertApproval(long owner, AgentRunApproval approval) {
+        try {
+            int inserted = inAudit(owner, () -> approvalMapper.insert(approval));
+            if (inserted != 1) {
+                throw conflict("AgentRun 批准事实创建失败");
+            }
+        } catch (DuplicateKeyException exception) {
+            throw conflict("AgentRun 批准事实创建冲突");
+        }
+    }
+
+    private boolean validDecisionScope(String decision, String repairScope) {
+        return switch (decision) {
+            case "repair" -> "render".equals(repairScope) || "timeline_render".equals(repairScope);
+            case "conditional" -> Set.of(
+                "render", "timeline_render", "video_downstream", "voice_downstream", "script_downstream",
+                "manual").contains(repairScope);
+            case "final" -> "none".equals(repairScope);
+            case "manual" -> "manual".equals(repairScope);
+            default -> false;
+        };
+    }
+
+    private PersistedQualityDecision recomputeQualityDecision(long owner,
+                                                               long agentRunId,
+                                                               RecordQualityEvaluationCommand command,
+                                                               TimelineOutputQualityDTO current) {
+        if (!Long.toString(command.renderTaskId()).equals(current.taskId())
+            || !Long.toString(command.resultAssetId()).equals(current.assetId())
+            || !Objects.equals(command.ruleSetVersion(), current.ruleSetVersion())) {
+            throw invalid("AgentRun 质量事实身份不一致");
+        }
+        TimelineOutputQualityDTO previous = null;
+        if (command.candidateNo() > 0) {
+            AgentRunEvaluation previousRow = findEvaluation(owner, agentRunId, command.candidateNo() - 1);
+            if (previousRow == null) {
+                throw conflict("AgentRun 上一候选质量事实不存在");
+            }
+            previous = parseQuality(previousRow.getQualityJson());
+            if (previous == null) {
+                return PersistedQualityDecision.MANUAL;
+            }
+        }
+        AgentQualityReworkPolicy.Decision decision = qualityPolicy.decide(
+            current, previous, Math.toIntExact(command.candidateNo()));
+        return persistedQualityDecision(decision);
+    }
+
+    private TimelineOutputQualityDTO parseQuality(String qualityJson) {
+        try {
+            return jsonMapper.readValue(qualityJson, TimelineOutputQualityDTO.class);
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    private PersistedQualityDecision persistedQualityDecision(AgentQualityReworkPolicy.Decision decision) {
+        if (decision.disposition() == AgentQualityReworkPolicy.Disposition.FINAL_APPROVAL) {
+            return new PersistedQualityDecision("final", "none");
+        }
+        if (decision.disposition() == AgentQualityReworkPolicy.Disposition.CONDITIONAL_APPROVAL
+            && decision.scope() == AgentQualityReworkPolicy.Scope.NONE) {
+            return PersistedQualityDecision.MANUAL;
+        }
+        String persistedDecision = decision.disposition() == AgentQualityReworkPolicy.Disposition.REPAIR
+            ? "repair" : "conditional";
+        return new PersistedQualityDecision(persistedDecision, switch (decision.scope()) {
+            case RENDER -> "render";
+            case TIMELINE_RENDER -> "timeline_render";
+            case VIDEO_DOWNSTREAM -> "video_downstream";
+            case VOICE_DOWNSTREAM -> "voice_downstream";
+            case SCRIPT_DOWNSTREAM -> "script_downstream";
+            case NONE -> "manual";
+        });
+    }
+
+    private record PersistedQualityDecision(String decision, String repairScope) {
+        private static final PersistedQualityDecision MANUAL =
+            new PersistedQualityDecision("manual", "manual");
     }
 
     private VersionAppend briefAppend(long owner, Long stableId, Long parentVersionId) {
@@ -703,8 +1099,21 @@ public class AgentRunServiceImpl implements IAgentRunService {
             run.getAcceptanceProfileVersionId(), number(run.getContractRevision()), run.getRunStatus(),
             number(run.getRowVersion()), number(run.getLeaseGeneration()), run.getWaitingTaskSource(),
             run.getWaitingTaskId(), run.getCandidateAssetId(), instant(run.getStateChangedAt()),
-            number(run.getRetryCount()), instant(run.getStartedAt()), instant(run.getResumeAfter()),
+            number(run.getRetryCount()), number(run.getQualityRepairCount()), run.getPendingApprovalId(),
+            number(run.getApprovalRevision()), instant(run.getStartedAt()), instant(run.getResumeAfter()),
             instant(run.getFinishedAt()), run.getErrorCode(), run.getErrorSummary());
+    }
+
+    private QualityEvaluationView toView(AgentRunEvaluation row) {
+        return new QualityEvaluationView(row.getEvaluationId(), row.getAgentRunId(), row.getCandidateNo(),
+            row.getRenderTaskId(), row.getResultAssetId(), row.getProjectId(), row.getRuleSetVersion(),
+            row.getQualityJson(), row.getQualityDigest(), row.getDecision(), row.getRepairScope());
+    }
+
+    private ApprovalView toView(AgentRunApproval row) {
+        return new ApprovalView(row.getApprovalId(), row.getAgentRunId(), row.getEvaluationId(),
+            row.getApprovalType(), row.getApprovalStatus(), row.getSubjectDigest(), number(row.getRevision()),
+            row.getRequestSummary(), row.getDecisionSummary(), instant(row.getDecidedAt()));
     }
 
     private void auditCreate(DeliveryBriefVersion version, long owner) {
@@ -726,6 +1135,20 @@ public class AgentRunServiceImpl implements IAgentRunService {
         run.setActorId(owner);
         run.setCreateBy(owner);
         run.setUpdateBy(owner);
+    }
+
+    private void auditCreate(AgentRunEvaluation row, long owner) {
+        row.setActorType(APP_USER);
+        row.setActorId(owner);
+        row.setCreateBy(owner);
+        row.setUpdateBy(owner);
+    }
+
+    private void auditCreate(AgentRunApproval row, long owner) {
+        row.setActorType(APP_USER);
+        row.setActorId(owner);
+        row.setCreateBy(owner);
+        row.setUpdateBy(owner);
     }
 
     private <T> T inAudit(long owner, Supplier<T> action) {

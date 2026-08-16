@@ -158,6 +158,18 @@
       ]
     },
     {
+      "id": "120",
+      "kind": "schema",
+      "file": "docs/sql/videoops-agent/mysql/120_agent_run_quality_control.sql",
+      "sha256": "66642F11397EE38968A8DEAC8B90118E3EB575585D41B23C823685AA479273D2",
+      "purpose": "有界质量返工、候选评估与三类人工批准控制面",
+      "tables": [
+        "av_agent_run",
+        "av_agent_run_evaluation",
+        "av_agent_run_approval"
+      ]
+    },
+    {
       "id": "900",
       "kind": "seed",
       "file": "docs/sql/videoops-agent/mysql/900_minimal_seed.sql",

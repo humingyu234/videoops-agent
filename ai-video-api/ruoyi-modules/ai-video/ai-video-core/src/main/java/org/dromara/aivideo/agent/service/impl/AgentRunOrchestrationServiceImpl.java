@@ -2,12 +2,14 @@ package org.dromara.aivideo.agent.service.impl;
 
 import org.dromara.aivideo.agent.dto.AgentRunOrchestrationDTOs;
 import org.dromara.aivideo.agent.dto.AgentToolDTOs;
+import org.dromara.aivideo.agent.service.AgentQualityReworkPolicy;
 import org.dromara.aivideo.agent.service.IAgentRunOrchestrationService;
 import org.dromara.aivideo.agent.service.IAgentRunService;
 import org.dromara.aivideo.agent.service.IAgentToolService;
 import org.dromara.aivideo.identity.dto.AppPrincipalSnapshotDTO;
 import org.dromara.aivideo.identity.dto.AppWorkspaceSessionSnapshotDTO;
 import org.dromara.aivideo.identity.security.ConditionalOnAppSecurityEnabled;
+import org.dromara.aivideo.timeline.dto.TimelineOutputQualityDTO;
 import org.dromara.common.core.exception.ServiceException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -37,6 +39,7 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
     private static final String RUNNING = "running";
     private static final String WAITING_INPUT = "waiting_input";
     private static final String WAITING_EXTERNAL_TASK = "waiting_external_task";
+    private static final String WAITING_APPROVAL = "waiting_approval";
     private static final String COMPLETED = "completed";
     private static final String FAILED = "failed";
     private static final String CANCELLED = "cancelled";
@@ -55,6 +58,12 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
 
     private static final String VOICE_GENERATE = "voice_generate";
     private static final String VIDEO_GENERATE = "video_generate";
+
+    private static final String INITIAL_APPROVAL = "initial";
+    private static final String CONDITIONAL_APPROVAL = "conditional";
+    private static final String FINAL_APPROVAL = "final";
+    private static final Set<String> APPROVAL_TYPES = Set.of(
+        INITIAL_APPROVAL, CONDITIONAL_APPROVAL, FINAL_APPROVAL);
 
     private static final Pattern POSITIVE_ID = Pattern.compile("[1-9][0-9]{0,18}");
     private static final Pattern WORKER_ID = Pattern.compile("[A-Za-z0-9._:-]{1,128}");
@@ -96,22 +105,39 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
     private final IAgentRunService runService;
     private final IAgentToolService toolService;
     private final JsonMapper jsonMapper;
+    private final AgentQualityReworkPolicy qualityPolicy;
     private final Clock clock;
+
+    public AgentRunOrchestrationServiceImpl(IAgentRunService runService,
+                                            IAgentToolService toolService,
+                                            JsonMapper jsonMapper) {
+        this(runService, toolService, jsonMapper, new AgentQualityReworkPolicy(), Clock.systemUTC());
+    }
 
     @Autowired
     public AgentRunOrchestrationServiceImpl(IAgentRunService runService,
                                             IAgentToolService toolService,
-                                            JsonMapper jsonMapper) {
-        this(runService, toolService, jsonMapper, Clock.systemUTC());
+                                            JsonMapper jsonMapper,
+                                            AgentQualityReworkPolicy qualityPolicy) {
+        this(runService, toolService, jsonMapper, qualityPolicy, Clock.systemUTC());
     }
 
     AgentRunOrchestrationServiceImpl(IAgentRunService runService,
                                      IAgentToolService toolService,
                                      JsonMapper jsonMapper,
                                      Clock clock) {
+        this(runService, toolService, jsonMapper, new AgentQualityReworkPolicy(), clock);
+    }
+
+    AgentRunOrchestrationServiceImpl(IAgentRunService runService,
+                                     IAgentToolService toolService,
+                                     JsonMapper jsonMapper,
+                                     AgentQualityReworkPolicy qualityPolicy,
+                                     Clock clock) {
         this.runService = Objects.requireNonNull(runService, "runService");
         this.toolService = Objects.requireNonNull(toolService, "toolService");
         this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
+        this.qualityPolicy = Objects.requireNonNull(qualityPolicy, "qualityPolicy");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -135,6 +161,9 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
         if (terminal(run.runStatus())) {
             return terminal(run);
         }
+        if (WAITING_APPROVAL.equals(run.runStatus())) {
+            return approvalRequired(principal, run);
+        }
 
         ParsedContract contract = parse(snapshot.deliveryBriefJson(), snapshot.acceptanceProfileJson());
         AgentRunOrchestrationDTOs.PlanResult plan = plan(principal, run, contract);
@@ -152,6 +181,12 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
             return stop(principal, run.agentRunId(), run.rowVersion(), run.contractRevision(), FAILED,
                 "AGENT_RESUME_BUDGET_EXHAUSTED", "Agent 恢复次数已达到上限");
         }
+        if (run.approvalRevision() == 0) {
+            IAgentRunService.ApprovalView approval = runService.requestInitialApproval(principal,
+                new IAgentRunService.RequestInitialApprovalCommand(run.agentRunId(), run.rowVersion(),
+                    run.contractRevision(), "批准冻结的 Brief、素材、预算与执行上限"));
+            return approvalRequired(run, approval, null);
+        }
 
         IAgentRunService.AgentRunLease lease = runService.claim(principal,
             new IAgentRunService.ClaimAgentRunCommand(run.agentRunId(), run.rowVersion(), run.contractRevision(),
@@ -161,7 +196,7 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
         }
         try {
             if (lease.waitingTaskSource() != null && lease.waitingTaskId() != null) {
-                return resumeWaiting(principal, contract, lease, run.retryCount());
+                return resumeWaiting(principal, contract, lease, run.retryCount(), run.qualityRepairCount());
             }
             return start(principal, contract, lease);
         } catch (OrchestrationFailure failure) {
@@ -195,6 +230,39 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
         }
         return stop(principal, run.agentRunId(), run.rowVersion(), run.contractRevision(), CANCELLED,
             "AGENT_RUN_CANCELLED", "Agent 执行已取消");
+    }
+
+    @Override
+    public AgentRunOrchestrationDTOs.AdvanceResult decideApproval(
+        AppPrincipalSnapshotDTO principal, AgentRunOrchestrationDTOs.ApprovalCommand command) {
+        requireApprovalCommand(command);
+        IAgentRunService.ExecutionSnapshot snapshot = runService.getOwnedExecutionSnapshot(
+            principal, command.agentRunId());
+        requireApprovalPrincipal(principal, parse(snapshot.deliveryBriefJson(), snapshot.acceptanceProfileJson()));
+        String decision = command.approved() ? "approved" : "rejected";
+        IAgentRunService.ApprovalDecisionReceipt receipt = runService.decideApproval(principal,
+            new IAgentRunService.DecideApprovalCommand(command.agentRunId(), command.expectedRowVersion(),
+                command.expectedContractRevision(), command.approvalId(), command.expectedApprovalRevision(),
+                command.approvalType(), decision, command.approved() ? "负责人已批准当前检查点" : "负责人拒绝当前检查点"));
+        IAgentRunService.AgentRunView run = runService.getOwnedRun(principal, receipt.agentRunId());
+        if (COMPLETED.equals(run.runStatus()) || CANCELLED.equals(run.runStatus())) {
+            return terminal(run);
+        }
+        if (WAITING_INPUT.equals(run.runStatus())) {
+            return blocked(run, List.of("deliveryBriefVersionId"));
+        }
+        return new AgentRunOrchestrationDTOs.AdvanceResult(run.agentRunId(), run.runStatus(), "approved",
+            run.waitingTaskSource(), run.waitingTaskId(), run.candidateAssetId(), List.of(), null, null);
+    }
+
+    private void requireApprovalPrincipal(AppPrincipalSnapshotDTO principal, ParsedContract contract) {
+        if (contract.input() == null || !contract.issues().isEmpty()) {
+            throw new ServiceException("Agent 审批合同无效", 46704);
+        }
+        Set<String> required = requiredPermissions(contract.input().startAt());
+        if (!canonicalPrincipal(principal) || !principal.workspace().permissions().containsAll(required)) {
+            throw new ServiceException("Agent 审批权限不足", 46703);
+        }
     }
 
     private AgentRunOrchestrationDTOs.AdvanceResult start(AppPrincipalSnapshotDTO principal,
@@ -256,12 +324,13 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
     private AgentRunOrchestrationDTOs.AdvanceResult resumeWaiting(AppPrincipalSnapshotDTO principal,
                                                                    ParsedContract contract,
                                                                    IAgentRunService.AgentRunLease lease,
-                                                                   long retryCount) {
+                                                                   long retryCount,
+                                                                   long qualityRepairCount) {
         if (DIGITAL_HUMAN_TASK.equals(lease.waitingTaskSource())) {
             return resumeGeneration(principal, contract, lease);
         }
         if (AI_TASK.equals(lease.waitingTaskSource())) {
-            return resumeRender(principal, contract, lease, retryCount);
+            return resumeRender(principal, contract, lease, retryCount, qualityRepairCount);
         }
         throw invalidResult();
     }
@@ -351,7 +420,8 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
     private AgentRunOrchestrationDTOs.AdvanceResult resumeRender(AppPrincipalSnapshotDTO principal,
                                                                   ParsedContract contract,
                                                                   IAgentRunService.AgentRunLease lease,
-                                                                  long retryCount) {
+                                                                  long retryCount,
+                                                                  long qualityRepairCount) {
         long waitingId = lease.waitingTaskId();
         AgentToolDTOs.RenderStatusResult render = renderStatus(call(principal, GET_RENDER,
             object("taskId", Long.toString(waitingId))));
@@ -383,15 +453,72 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
         AgentToolDTOs.OutputInspectionResult output = output(call(principal, INSPECT_OUTPUT,
             object("taskId", render.taskId())));
         requireOutput(output, render);
-        long assetId = positiveLong(output.assetId());
-        boolean completed = runService.completeExternalTask(principal,
-            new IAgentRunService.CompleteExternalTaskCommand(lease.proof(), AI_TASK, waitingId, assetId,
-                resultSummary(output)));
-        if (!completed) {
+        TimelineOutputQualityDTO previous = previousQuality(principal, lease.agentRunId(), qualityRepairCount);
+        AgentQualityReworkPolicy.Decision decision = qualityPolicy.decide(
+            output.quality(), previous, Math.toIntExact(qualityRepairCount));
+        IAgentRunService.QualityEvaluationView evaluation = runService.recordQualityEvaluation(principal,
+            new IAgentRunService.RecordQualityEvaluationCommand(lease.proof(), qualityRepairCount, waitingId,
+                positiveLong(output.assetId()), positiveLong(render.projectId()), output.quality().ruleSetVersion(),
+                qualityJson(output.quality()), persistedDecision(decision), persistedScope(decision)));
+        if (evaluation == null) {
             return stateConflict(lease.agentRunId(), lease.rowVersion(), lease.contractRevision());
         }
-        return new AgentRunOrchestrationDTOs.AdvanceResult(lease.agentRunId(), COMPLETED, "completed",
-            null, null, assetId, List.of(), null, null);
+        return switch (decision.disposition()) {
+            case REPAIR -> startQualityRepair(principal, contract, lease, render, evaluation, decision.scope());
+            case CONDITIONAL_APPROVAL -> requestQualityApproval(principal, lease, output, evaluation,
+                CONDITIONAL_APPROVAL, decision.reasonCode());
+            case FINAL_APPROVAL -> requestQualityApproval(principal, lease, output, evaluation,
+                FINAL_APPROVAL, decision.reasonCode());
+        };
+    }
+
+    private AgentRunOrchestrationDTOs.AdvanceResult startQualityRepair(
+        AppPrincipalSnapshotDTO principal,
+        ParsedContract contract,
+        IAgentRunService.AgentRunLease lease,
+        AgentToolDTOs.RenderStatusResult render,
+        IAgentRunService.QualityEvaluationView evaluation,
+        AgentQualityReworkPolicy.Scope scope) {
+        int attempt = Math.toIntExact(evaluation.candidateNo() + 1);
+        AgentToolDTOs.RenderTaskResult next;
+        if (scope == AgentQualityReworkPolicy.Scope.RENDER) {
+            next = renderTask(call(principal, RENDER_TIMELINE,
+                object("idempotencyKey", key(lease.agentRunId(), "repair-render", attempt),
+                    "projectId", render.projectId(), "expectedRevision", render.draftRevision())));
+            requireRenderTask(next, render.projectId(), render.draftRevision());
+        } else if (scope == AgentQualityReworkPolicy.Scope.TIMELINE_RENDER) {
+            requireRepairSource(render);
+            AgentToolDTOs.ProjectResult project = project(call(principal, PREPARE_PROJECT,
+                object("idempotencyKey", key(lease.agentRunId(), "repair-project", attempt),
+                    "videoJobId", render.sourceId(), "projectTitle", render.projectTitle())));
+            requireProject(project);
+            next = renderTask(call(principal, RENDER_TIMELINE,
+                object("idempotencyKey", key(lease.agentRunId(), "repair-render", attempt),
+                    "projectId", project.projectId(), "expectedRevision", project.currentDraftRevision())));
+            requireRenderTask(next, project.projectId(), project.currentDraftRevision());
+        } else {
+            throw invalidResult();
+        }
+        requireParkableRender(principal, next);
+        IAgentRunService.QualityRepairReceipt receipt = runService.startQualityRepair(principal,
+            new IAgentRunService.StartQualityRepairCommand(lease.proof(), evaluation.evaluationId(),
+                persistedScope(scope), positiveLong(next.taskId()), resumeAfter(contract.policy())));
+        return receipt == null ? stateConflict(lease.agentRunId(), lease.rowVersion(), lease.contractRevision())
+            : waiting(receipt.waiting(), lease.agentRunId());
+    }
+
+    private AgentRunOrchestrationDTOs.AdvanceResult requestQualityApproval(
+        AppPrincipalSnapshotDTO principal,
+        IAgentRunService.AgentRunLease lease,
+        AgentToolDTOs.OutputInspectionResult output,
+        IAgentRunService.QualityEvaluationView evaluation,
+        String approvalType,
+        String reasonCode) {
+        IAgentRunService.ApprovalView approval = runService.requestQualityApproval(principal,
+            new IAgentRunService.RequestQualityApprovalCommand(lease.proof(), evaluation.evaluationId(),
+                approvalType, "质量检查需要" + (FINAL_APPROVAL.equals(approvalType) ? "最终交付" : "条件")
+                    + "批准：" + reasonCode));
+        return approvalRequired(lease.agentRunId(), approval, positiveLong(output.assetId()));
     }
 
     private AgentRunOrchestrationDTOs.AdvanceResult parkInitial(AppPrincipalSnapshotDTO principal,
@@ -756,10 +883,21 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
             || !"video".equals(output.assetType()) || !"timeline_render_output".equals(output.usageOrigin())
             || output.mimeType() == null || !output.mimeType().startsWith("video/") || output.sha256() == null
             || output.sizeBytes() <= 0 || !output.hasVideoStream() || !output.hasAudioStream()
-            || output.downloadPath() == null || output.downloadPath().isBlank()) {
+            || output.downloadPath() == null || output.downloadPath().isBlank() || output.quality() == null
+            || !Objects.equals(output.taskId(), output.quality().taskId())
+            || !Objects.equals(output.assetId(), output.quality().assetId())
+            || !Objects.equals(output.sha256(), output.quality().artifactSha256())) {
             throw invalidResult();
         }
         positiveLong(output.assetId());
+    }
+
+    private void requireRepairSource(AgentToolDTOs.RenderStatusResult render) {
+        if (!"digital_human_job".equals(render.sourceType()) || render.sourceId() == null
+            || render.projectTitle() == null || render.projectTitle().isBlank()) {
+            throw invalidResult();
+        }
+        positiveLong(render.sourceId());
     }
 
     private boolean activeGeneration(AgentToolDTOs.GenerationJobResult job) {
@@ -820,6 +958,89 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
         } catch (Exception exception) {
             throw invalidResult();
         }
+    }
+
+    private TimelineOutputQualityDTO previousQuality(AppPrincipalSnapshotDTO principal,
+                                                       long agentRunId,
+                                                       long qualityRepairCount) {
+        if (qualityRepairCount == 0) {
+            return null;
+        }
+        if (qualityRepairCount < 0 || qualityRepairCount > 2) {
+            throw invalidResult();
+        }
+        IAgentRunService.QualityEvaluationView previous = runService.getOwnedQualityEvaluation(
+            principal, agentRunId, qualityRepairCount - 1);
+        try {
+            return jsonMapper.readValue(previous.qualityJson(), TimelineOutputQualityDTO.class);
+        } catch (Exception exception) {
+            throw invalidResult();
+        }
+    }
+
+    private String qualityJson(TimelineOutputQualityDTO quality) {
+        try {
+            return jsonMapper.writeValueAsString(quality);
+        } catch (Exception exception) {
+            throw invalidResult();
+        }
+    }
+
+    private String persistedDecision(AgentQualityReworkPolicy.Decision decision) {
+        return switch (decision.disposition()) {
+            case REPAIR -> "repair";
+            case CONDITIONAL_APPROVAL -> decision.scope() == AgentQualityReworkPolicy.Scope.NONE
+                ? "manual" : "conditional";
+            case FINAL_APPROVAL -> "final";
+        };
+    }
+
+    private String persistedScope(AgentQualityReworkPolicy.Decision decision) {
+        return decision.disposition() == AgentQualityReworkPolicy.Disposition.CONDITIONAL_APPROVAL
+            && decision.scope() == AgentQualityReworkPolicy.Scope.NONE
+            ? "manual" : persistedScope(decision.scope());
+    }
+
+    private String persistedScope(AgentQualityReworkPolicy.Scope scope) {
+        return switch (scope) {
+            case RENDER -> "render";
+            case TIMELINE_RENDER -> "timeline_render";
+            case VIDEO_DOWNSTREAM -> "video_downstream";
+            case VOICE_DOWNSTREAM -> "voice_downstream";
+            case SCRIPT_DOWNSTREAM -> "script_downstream";
+            case NONE -> "none";
+        };
+    }
+
+    private AgentRunOrchestrationDTOs.AdvanceResult approvalRequired(
+        AppPrincipalSnapshotDTO principal,
+        IAgentRunService.AgentRunView run) {
+        if (run.pendingApprovalId() == null || run.pendingApprovalId() <= 0 || run.approvalRevision() <= 0) {
+            throw invalidResult();
+        }
+        IAgentRunService.ApprovalView approval = runService.getOwnedApproval(
+            principal, run.agentRunId(), run.pendingApprovalId());
+        return approvalRequired(run, approval, run.candidateAssetId());
+    }
+
+    private AgentRunOrchestrationDTOs.AdvanceResult approvalRequired(
+        IAgentRunService.AgentRunView run,
+        IAgentRunService.ApprovalView approval,
+        Long candidateAssetId) {
+        return approvalRequired(run.agentRunId(), approval, candidateAssetId);
+    }
+
+    private AgentRunOrchestrationDTOs.AdvanceResult approvalRequired(
+        long agentRunId,
+        IAgentRunService.ApprovalView approval,
+        Long candidateAssetId) {
+        if (approval == null || approval.approvalId() <= 0 || approval.revision() <= 0
+            || !"pending".equals(approval.approvalStatus()) || !APPROVAL_TYPES.contains(approval.approvalType())) {
+            throw invalidResult();
+        }
+        return new AgentRunOrchestrationDTOs.AdvanceResult(agentRunId, WAITING_APPROVAL,
+            "approval_required", null, null, candidateAssetId, List.of(), "AGENT_APPROVAL_REQUIRED",
+            "Agent 执行等待负责人批准", approval.approvalId(), approval.revision(), approval.approvalType());
     }
 
     private AgentRunOrchestrationDTOs.AdvanceResult blockBeforeTools(AppPrincipalSnapshotDTO principal,
@@ -938,6 +1159,14 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
             || command.expectedContractRevision() <= 0 || command.workerId() == null
             || !WORKER_ID.matcher(command.workerId()).matches()) {
             throw new IllegalArgumentException("advance command is invalid");
+        }
+    }
+
+    private void requireApprovalCommand(AgentRunOrchestrationDTOs.ApprovalCommand command) {
+        if (command == null || command.agentRunId() <= 0 || command.expectedRowVersion() < 0
+            || command.expectedContractRevision() <= 0 || command.approvalId() <= 0
+            || command.expectedApprovalRevision() <= 0 || !APPROVAL_TYPES.contains(command.approvalType())) {
+            throw new IllegalArgumentException("approval command is invalid");
         }
     }
 

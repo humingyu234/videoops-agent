@@ -82,8 +82,28 @@ public final class AgentToolDTOs {
         boolean cancellable,
         boolean retryable,
         String errorCode,
-        String safeMessage
+        String safeMessage,
+        String sourceType,
+        String sourceId,
+        String projectTitle
     ) implements Result {
+
+        public RenderStatusResult(
+            String taskId,
+            String status,
+            String stage,
+            int progress,
+            String projectId,
+            String draftRevision,
+            String resultAssetId,
+            boolean cancellable,
+            boolean retryable,
+            String errorCode,
+            String safeMessage
+        ) {
+            this(taskId, status, stage, progress, projectId, draftRevision, resultAssetId, cancellable,
+                retryable, errorCode, safeMessage, null, null, null);
+        }
     }
 
     public record OutputInspectionResult(
