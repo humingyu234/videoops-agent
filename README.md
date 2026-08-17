@@ -1,88 +1,131 @@
 # VideoOps Agent
 
-面向图生数字人口播交付的受约束 Agent：从已确认的交付目标出发，复用现有人物、原声、数字人、时间轴与渲染能力，持续记录任务、质量结论和人工决策，最终交付可下载 MP4。
+<div align="center">
 
-> 目标产品入口是 `/agent`。T7 已完成真实登录、AgentRun、批准、Trace 与一次声音调用，但在声音同步调用期间重启后按安全门禁转人工，完整全链仍为 `BLOCKED`；实时状态见 [docs/EXECUTION.md](docs/EXECUTION.md)。下方历史真实样例来自 `/studio` 黄金链，不代表 `/agent` 端到端已经完成。
+**让数字人口播视频从“七步人工操作”变成一条可执行、可恢复、可质检、可追踪的 Agent 交付链。**
 
-| 边界 | 证据等级 | 当前状态 |
+[▶ 在线体验 Demo](https://humingyu234.github.io/videoops-agent/) · [▶ 直接播放真实样片](https://humingyu234.github.io/videoops-agent/VideoOps-Agent-digital-human-demo.mp4) · [查看源码](https://github.com/humingyu234/videoops-agent)
+
+</div>
+
+VideoOps Agent 面向品牌、电商和内容运营团队。用户只需要给出视频交付目标、人物与声音选择，Agent 就会沿着受约束的生产链完成脚本确认、声音、数字人、时间轴、字幕、渲染、质量检查和人工批准，最终交付可下载的竖屏 MP4，并保留完整执行轨迹。
+
+> 它不是一个只给建议的聊天机器人，而是一个真正调用现有视频生产能力、持续跟踪异步任务并对交付结果负责的行业 Agent。
+
+## 一眼看懂
+
+| 用户交给它 | Agent 负责 | 最终得到 |
 | --- | --- | --- |
-| T1 人工黄金链：`/studio` → IndexTTS2 / ComfyUI → 字幕与渲染 → MP4 | `REAL` | `PASS`，保留一条本机试运行成品 |
-| T2–T6：可恢复 AgentRun、白名单工具、质量门禁和有限返工 | `LOCAL` | 阶段 checkpoint 已有本机 MySQL / FFmpeg 及受控 adapter 边界证据 |
-| T7 默认 `/agent` 全链与四种演示 | `PARTIAL / BLOCKED` | 真实 AgentRun、初始批准、过期批准拒绝、同任务重启查询与转人工已运行；成功成品和局部返工尚未到达 |
-| 公开 GitHub 源码镜像 | `LOCAL` | [humingyu234/videoops-agent](https://github.com/humingyu234/videoops-agent) 已公开；`origin/main` 当前为 `3740c5e38cc6f19f466c34b16fa1cbf5561966a7`，本地 T7 复用入口 checkpoint 未由本线程 push，远端操作由监督线程负责 |
+| 品牌/商品事实、口播目标、人物和声音 | 澄清输入、调用工具、等待任务、逐项质检、有限返工、请求批准 | 可下载 MP4、质量结论、人工决定与可回放 Trace |
 
-`REAL` 表示真实 Provider 或真实媒体边界已经运行；`LOCAL` 表示仅在本机隔离资源或受控 fake 外边界验证；`NOT_RUN` 表示不能作为完成声明。
-
-## 产品纵切面
-
-```text
-交付目标 + 已授权人物/原声
-  -> 冻结 Brief 与验收标准
-  -> 受限步骤与八把白名单工具
-  -> 声音 / 数字人 / 时间轴 / 渲染任务
-  -> 三层质量验收与最多两次局部返工
-  -> 必要时人工批准
-  -> owned ready MP4 + AgentRun Trace
+```mermaid
+flowchart LR
+    A["一句视频交付目标"] --> B["/agent 参赛入口"]
+    B --> C["受约束 AgentRun"]
+    C --> D["8 类白名单视频工具"]
+    D --> E["声音 / 数字人 / 时间轴 / 渲染"]
+    E --> F["三层质量检查"]
+    F -->|可定位问题| G["局部返工"]
+    F -->|低置信或主观判断| H["人工批准"]
+    G --> F
+    H --> I["最终 MP4 + Trace"]
+    F -->|通过| I
 ```
 
-- `/agent`：参赛默认入口，当前承载受约束执行、Trace 与批准；真实全链完成状态以 `EXECUTION` 为准。
-- `/studio`：保留的真实生产链、调试和人工接管入口，不作为默认参赛入口。
-- 服务端决定 owner、权限、幂等、任务终态和资产可见性；前端不能覆盖这些事实。
-- 自动重试与返工有次数、时间和成本上限；外部结果未知时不重复提交。
+## 为什么这个产品有价值
 
-## 最小本地启动指针
+- **把工具拼接变成结果交付**：Agent 直接复用已有声音、数字人、资产、时间轴和渲染 Service，不重新搭建一套孤立的演示链。
+- **长任务可以恢复**：AgentRun、外部任务 ID、幂等键和等待状态持久化；服务重启后继续查询同一根任务，避免重复提交 Provider。
+- **质检结果可解释**：媒体、内容版式、感知判断分层输出，每条标准都有 criterion code、版本和证据，不用一个黑盒总分掩盖具体问题。
+- **只修真正出错的部分**：字幕或版式问题只重做时间轴与渲染，保留已经成功的声音和数字人底片，节省时间与生成成本。
+- **自动化有清晰边界**：自动返工默认 1 次、硬上限 2 次；无法可靠改善、超预算或涉及主观判断时转人工，不陷入无休止循环。
+- **全过程可审计**：输入、工具调用、任务状态、质量结论、批准 revision/digest 和最终资产归属都进入 Trace，适合比赛演示，也适合真实团队协作。
 
-以下命令用于已完成本机隔离 MySQL、Redis 和 Git-ignored 配置后的无 Mock 开发启动；默认 fail-closed，不会自动打开 Provider 或黄金链能力。
+## 核心能力
+
+| 能力 | 产品表现 | 工程保障 |
+| --- | --- | --- |
+| 受约束执行 | 根据输入决定需要的步骤，可澄清、跳过或等待 | 固定状态机 + 类型化白名单工具，拒绝未知工具和多余参数 |
+| 异步任务恢复 | 生成期间刷新或重启，仍能继续原任务 | MySQL 持久状态、租约恢复、幂等同根任务、Provider submit=1 边界 |
+| 三层质量检查 | 检查可播放性、音视频、字幕、脚本与版式；主观项进入 REVIEW | FFmpeg 媒体事实 + 明确规则 + 低置信人工判断 |
+| 依赖感知返工 | 只重做受影响的下游步骤 | 保留上游任务身份、限制重试次数、无改善即转人工 |
+| 批准与权限 | 关键节点由素材所有者确认 | owner-scoped、revision/digest fail-closed、跨用户零副作用 |
+| 交付与追踪 | 下载最终成片，回放完整过程 | owned ready asset + 持久化 AgentRun Trace |
+
+## 在线 Demo 与真实样片
+
+### [打开 VideoOps Agent Demo 页面 →](https://humingyu234.github.io/videoops-agent/)
+
+Demo 页面内置一条经过真实声音、数字人、字幕和 FFmpeg 渲染链生成的竖屏效果样片；也可以[直接打开 MP4](https://humingyu234.github.io/videoops-agent/VideoOps-Agent-digital-human-demo.mp4)。
+
+| 样片指标 | 实测结果 |
+| --- | --- |
+| 时长 / 画幅 / 帧率 | 25.8 秒 / 1080 × 1920 / 30 fps |
+| 编码 | H.264 视频 + AAC 音频 |
+| 文件大小 | 5,244,591 bytes |
+| SHA-256 | `70AF66B5D57A43B3626DF1FE3C1CC85417010EC600C04050F3A93BA77FFEE0B7` |
+| 媒体验证 | ffprobe、完整解码、音轨、字幕可读性、黑帧/冻结/静音检查通过 |
+
+这条样片证明系统可以完成真实数字人口播视频输出；Agent 层在此基础上增加受约束执行、恢复、质检、局部返工与批准追踪。
+
+## 一条典型交付链
+
+1. 用户在 `/agent` 输入视频目标，选择新生成或复用自己已有的成功人物/声音/任务。
+2. Agent 校验输入与归属，创建可持久恢复的 AgentRun。
+3. Agent 通过白名单工具驱动声音、数字人、项目、时间轴与最终渲染。
+4. 每个异步步骤持续写入状态；刷新或重启后继续同一任务。
+5. 质量模块逐项输出证据：确定性问题阻断，主观或低置信项请求人工确认。
+6. 可定位问题只触发下游局部返工；通过批准后交付 owned ready MP4。
+7. 用户可回放 Trace，查看每一步调用、等待、质量判断、批准和最终资产关系。
+
+## 技术架构
+
+```text
+ai-video-ui/       React 19 + Ant Design：/agent、Trace、批准与专家工作台
+ai-video-api/      Java 21 + Spring：AgentRun、白名单工具、权限、任务与资产
+ai-video-worker/   Python：媒体处理与任务工作进程
+MySQL / Redis      持久状态、租约、幂等与隔离运行数据
+FFmpeg             时间轴渲染、媒体探测与确定性质检
+Provider Adapter   IndexTTS2 / ComfyUI 等可替换生成能力
+```
+
+设计原则是“Agent 负责编排，现有 Service 负责业务事实”：认证、owner、资产、任务终态和下载权限始终由服务端决定，模型不能绕过这些边界。
+
+## 本地开发启动
+
+环境要求：Java 21、Node.js 22+，以及项目独立的 MySQL / Redis 配置。敏感配置通过 Git-ignored 的本机安全载体注入。
 
 ```powershell
+# 后端：默认监听 18081
 .\scripts\start-local-user-api.ps1 -Port 18081
 
+# 前端：开发代理指向 http://127.0.0.1:18081
 Set-Location .\ai-video-ui\ai-video-webapp
 npm ci
 npm run dev
 ```
 
-前端代理默认指向 `http://127.0.0.1:18081`。真实黄金链只能在已获得素材、凭据、费用与 Provider 授权后显式启用；当前施工状态和唯一动作见 [docs/EXECUTION.md](docs/EXECUTION.md)。
+默认配置保持 Provider fail-closed；接入真实生成资源时，需要使用已授权的素材、账号和项目 namespace。数据库初始化见 [开发数据库说明](docs/DEVELOPMENT_DATABASE_INITIALIZATION.md)，实时工程证据见 [EXECUTION](docs/EXECUTION.md)。
 
-## 四种演示的验收门禁
-
-| 场景 | 必须观察到的产品事实 | T7 证据 |
-| --- | --- | --- |
-| 成功交付 | 从真实 `/agent` 进入同一 AgentRun，关联真实任务与 owned ready MP4，下载后 ffprobe 有效 | `NEEDS_EVIDENCE` |
-| 一次局部修复 | 明确质量缺口只使受影响的时间轴/渲染分支重做，声音与数字人根任务不重复提交 | `NEEDS_EVIDENCE` |
-| 转人工 | 低置信或主观冲突进入待批准；跨 owner、过期或错误 revision 的决定零 mutation | `PARTIAL`：过期 revision 已真实拒绝；声音调用重启后稳定转人工；跨 owner 缺第二身份而 `NOT_RUN` |
-| 重启恢复 | Provider 接受任务后仅重启本项目服务，继续查询同一任务和幂等键，提交计数仍为 1 | `PARTIAL / BLOCKED`：同一声音任务、无重提已证明；同步 Provider 调用无持久 job id，重启后不能恢复结果 |
-
-这些占位只会在当前源码对应的 HTTP/UI、持久化和媒体证据全部成立后改为 `PASS`。
-
-## 已保存的真实媒体基准
-
-T1 经 `/studio` 真实调用 IndexTTS2 与 ComfyUI，并在本地完成字幕与 FFmpeg 渲染。改进版成品保存在 Git-ignored 本机证据目录，不进入仓库：
-
-- SHA-256：`70AF66B5D57A43B3626DF1FE3C1CC85417010EC600C04050F3A93BA77FFEE0B7`
-- 大小：`5,244,591` bytes；时长：`25.8 s`
-- 视频：`1080 × 1920`、`30 fps`、H.264；音频：AAC
-- 完整解码通过，含可见烧录中文字幕；黑帧、冻结和静音检测均为 0，音视频起止差为 0
-
-该样例用于回归质量入口和演示叙事；它不是 T7 `/agent` 新运行的替代证据。
-
-## 工程结构
+## 项目地图
 
 ```text
-ai-video-ui/       React 用户端与运营端
-ai-video-api/      RuoYi-Vue-Plus 多模块后端
-ai-video-worker/   Python 媒体/任务工作进程
-ai-video-desktop/  Electron 薄壳
-docs/              产品范围、架构、契约与实时执行记录
-scripts/           本地启动、验证与安全检查
+ai-video-ui/       用户端与运营端界面
+ai-video-api/      多模块后端与领域 Service
+ai-video-worker/   媒体与任务工作进程
+ai-video-desktop/  Electron 桌面薄壳
+docs/              产品范围、架构、契约与执行证据
+scripts/           本地启动、验证与公开安全检查
 ```
 
-代码来源和脱敏基线见 [docs/BASELINE.md](docs/BASELINE.md)。参与开发先读 [AGENTS.md](AGENTS.md) 与 [RULES.md](RULES.md)；产品范围见 [docs/PROJECT.md](docs/PROJECT.md)，路线见 [docs/PLAN.md](docs/PLAN.md)。
+- [产品目标](docs/PROJECT.md)
+- [系统架构](docs/ARCHITECTURE.md)
+- [阶段路线](docs/PLAN.md)
+- [实时执行与验证记录](docs/EXECUTION.md)
+- [代码来源与脱敏基线](docs/BASELINE.md)
 
-## 源码许可、第三方组件与安全
+## 许可与安全
 
-本仓库现已公开可见；公开可见性不等于授予使用许可。原创贡献部分仍按 [LICENSE](LICENSE) 保留权利，上游代码、字体和依赖分别适用其自身许可证，已核验的根层提示见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+本仓库用于公开评审与比赛展示。原创贡献部分适用根目录 [LICENSE](LICENSE)，上游代码、字体和依赖分别适用其自身许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-- 不提交密钥、口令、Token、签名 URL、私有地址、证书、未授权素材或本机媒体产物。
-- 本机配置只通过 Git-ignored 的安全载体和当前进程注入；默认配置保持 Provider fail-closed。
-- 远端 push、PR 与 Pages 由监督线程执行；每次更新前仍须重新运行秘密、媒体与公开快照门禁，并复核目标 commit。
+仓库不提交密钥、口令、Token、签名 URL、私有地址、证书、未授权素材或本机媒体产物；公开更新前会执行秘密、媒体与快照扫描。
