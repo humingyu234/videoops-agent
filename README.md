@@ -18,19 +18,9 @@ VideoOps Agent 面向品牌、电商和内容运营团队。用户只需要给�
 | --- | --- | --- |
 | 品牌/商品事实、口播目标、人物和声音 | 澄清输入、调用工具、等待任务、逐项质检、有限返工、请求批准 | 可下载 MP4、质量结论、人工决定与可回放 Trace |
 
-```mermaid
-flowchart LR
-    A["一句视频交付目标"] --> B["/agent 参赛入口"]
-    B --> C["受约束 AgentRun"]
-    C --> D["8 类白名单视频工具"]
-    D --> E["声音 / 数字人 / 时间轴 / 渲染"]
-    E --> F["三层质量检查"]
-    F -->|可定位问题| G["局部返工"]
-    F -->|低置信或主观判断| H["人工批准"]
-    G --> F
-    H --> I["最终 MP4 + Trace"]
-    F -->|通过| I
-```
+<p align="center">
+  <img src="docs/assets/videoops-agent-handdrawn-flow.svg" alt="VideoOps Agent 从交付目标到最终 MP4 的手绘流程图" width="100%" />
+</p>
 
 ## 为什么这个产品有价值
 

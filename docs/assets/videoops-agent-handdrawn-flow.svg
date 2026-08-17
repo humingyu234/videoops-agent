@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+  <title id="title">VideoOps Agent 一条可执行的视频交付链</title>
+  <desc id="desc">用户提交口播目标、人物和声音，Agent 通过受约束执行与逐项质检交付最终 MP4。可定位问题只做局部返工，低置信和主观问题交由人工批准。</desc>
+  <defs>
+    <filter id="paper" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" result="noise"/>
+      <feColorMatrix in="noise" type="saturate" values="0" result="gray"/>
+      <feComponentTransfer in="gray" result="softNoise">
+        <feFuncA type="table" tableValues="0 0.055"/>
+      </feComponentTransfer>
+      <feBlend in="SourceGraphic" in2="softNoise" mode="multiply"/>
+    </filter>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="3" dy="5" stdDeviation="3" flood-color="#202733" flood-opacity="0.16"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M1,1 L11,6 L1,11 L3.5,6 Z" fill="#273142"/>
+    </marker>
+    <style>
+      .hand { font-family: "Comic Sans MS", "KaiTi", "STKaiti", "Microsoft YaHei", sans-serif; fill: #1f2937; }
+      .title { font-size: 38px; font-weight: 700; letter-spacing: 1px; }
+      .card-title { font-size: 29px; font-weight: 700; }
+      .body { font-size: 22px; font-weight: 600; }
+      .small { font-size: 18px; font-weight: 600; fill: #4b5563; }
+      .label { font-size: 18px; font-weight: 700; fill: #394457; }
+      .ink { stroke: #273142; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+      .sketch { stroke: #273142; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+      .ghost { stroke: #273142; stroke-width: 1.15; opacity: 0.28; fill: none; }
+      .arrow { stroke: #273142; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1200" height="620" rx="24" fill="#fbf8ef" filter="url(#paper)"/>
+  <path d="M35 78 C230 69, 383 85, 566 76 S903 66, 1167 78" stroke="#d9d2c1" stroke-width="2" fill="none"/>
+  <text x="600" y="54" text-anchor="middle" class="hand title">一条可执行、可检查、可返工的视频交付链</text>
+
+  <!-- Input card -->
+  <g filter="url(#shadow)" transform="rotate(-0.35 155 224)">
+    <rect x="35" y="132" width="240" height="190" rx="22" fill="#eaf1ff" class="sketch"/>
+    <rect x="39" y="136" width="232" height="182" rx="20" class="ghost"/>
+    <path d="M103 127 L203 127 L194 146 L110 146 Z" fill="#f4d59b" opacity="0.85"/>
+    <text x="155" y="184" text-anchor="middle" class="hand card-title">你给目标</text>
+    <text x="155" y="225" text-anchor="middle" class="hand body">口播脚本</text>
+    <text x="155" y="260" text-anchor="middle" class="hand body">人物 · 声音</text>
+    <text x="155" y="294" text-anchor="middle" class="hand small">品牌 / 商品事实</text>
+  </g>
+
+  <!-- Execution card -->
+  <g filter="url(#shadow)" transform="rotate(0.25 450 224)">
+    <rect x="330" y="112" width="250" height="230" rx="24" fill="#fff3c4" class="sketch"/>
+    <rect x="334" y="116" width="242" height="222" rx="21" class="ghost"/>
+    <path d="M406 106 L505 109 L500 128 L412 126 Z" fill="#efb5a2" opacity="0.8"/>
+    <text x="455" y="163" text-anchor="middle" class="hand card-title">Agent 接手</text>
+    <text x="455" y="204" text-anchor="middle" class="hand body">固定 9 步执行</text>
+    <text x="455" y="240" text-anchor="middle" class="hand body">只用白名单工具</text>
+    <text x="455" y="276" text-anchor="middle" class="hand body">等待 · 恢复 · 限额</text>
+    <text x="455" y="312" text-anchor="middle" class="hand small">声音 → 数字人 → 渲染</text>
+  </g>
+
+  <!-- Quality card -->
+  <g filter="url(#shadow)" transform="rotate(-0.2 752 224)">
+    <rect x="635" y="112" width="250" height="230" rx="24" fill="#e5f7e8" class="sketch"/>
+    <rect x="639" y="116" width="242" height="222" rx="21" class="ghost"/>
+    <path d="M705 107 L805 105 L799 127 L711 126 Z" fill="#c8b5ee" opacity="0.78"/>
+    <text x="760" y="163" text-anchor="middle" class="hand card-title">逐项检查成片</text>
+    <text x="760" y="204" text-anchor="middle" class="hand body">媒体是否可靠</text>
+    <text x="760" y="240" text-anchor="middle" class="hand body">内容 / 字幕是否正确</text>
+    <text x="760" y="276" text-anchor="middle" class="hand body">主观项不假装通过</text>
+    <text x="760" y="312" text-anchor="middle" class="hand small">PASS · FAIL · REVIEW</text>
+  </g>
+
+  <!-- Output card -->
+  <g filter="url(#shadow)" transform="rotate(0.4 1067 224)">
+    <rect x="950" y="132" width="215" height="190" rx="22" fill="#efe8ff" class="sketch"/>
+    <rect x="954" y="136" width="207" height="182" rx="20" class="ghost"/>
+    <path d="M1015 128 L1106 126 L1101 147 L1021 146 Z" fill="#f4d59b" opacity="0.85"/>
+    <text x="1058" y="184" text-anchor="middle" class="hand card-title">最终交付</text>
+    <text x="1058" y="226" text-anchor="middle" class="hand body">可下载 MP4</text>
+    <text x="1058" y="262" text-anchor="middle" class="hand body">质量结论</text>
+    <text x="1058" y="297" text-anchor="middle" class="hand body">完整 Trace</text>
+  </g>
+
+  <!-- Main arrows -->
+  <path d="M282 226 C299 222, 307 224, 323 226" class="arrow"/>
+  <path d="M586 225 C603 221, 612 224, 628 226" class="arrow"/>
+  <path d="M893 226 C914 221, 928 224, 944 226" class="arrow"/>
+  <text x="919" y="205" text-anchor="middle" class="hand label">通过</text>
+
+  <!-- Repair card and loop -->
+  <g filter="url(#shadow)" transform="rotate(0.3 585 478)">
+    <rect x="424" y="425" width="315" height="112" rx="21" fill="#ffe7df" class="sketch"/>
+    <rect x="428" y="429" width="307" height="104" rx="18" class="ghost"/>
+    <text x="582" y="468" text-anchor="middle" class="hand card-title">局部返工</text>
+    <text x="582" y="505" text-anchor="middle" class="hand body">只重做时间轴 / 渲染</text>
+    <text x="582" y="528" text-anchor="middle" class="hand small">有上限，不无限循环</text>
+  </g>
+  <path d="M716 350 C704 381, 677 403, 642 421" class="arrow"/>
+  <text x="689" y="387" class="hand label">问题可定位</text>
+  <path d="M424 482 C360 482, 300 475, 300 420 C300 380, 365 368, 438 370 C520 372, 588 374, 650 361" class="arrow"/>
+  <text x="315" y="454" class="hand label">修完再检查</text>
+
+  <!-- Human approval card -->
+  <g filter="url(#shadow)" transform="rotate(-0.45 964 480)">
+    <rect x="833" y="425" width="264" height="112" rx="21" fill="#e8f1f7" class="sketch"/>
+    <rect x="837" y="429" width="256" height="104" rx="18" class="ghost"/>
+    <text x="965" y="470" text-anchor="middle" class="hand card-title">人工批准</text>
+    <text x="965" y="507" text-anchor="middle" class="hand body">不确定，就停下来问人</text>
+  </g>
+  <path d="M818 350 C840 378, 875 402, 913 421" class="arrow"/>
+  <text x="858" y="388" class="hand label">低置信 / 主观</text>
+  <path d="M1095 426 C1140 391, 1143 352, 1101 326" class="arrow"/>
+  <text x="1137" y="383" text-anchor="end" class="hand label">批准</text>
+
+  <!-- Small hand-drawn accents -->
+  <path d="M50 574 C134 561, 210 582, 290 570" stroke="#5d8cff" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.65"/>
+  <path d="M905 573 C991 562, 1061 579, 1144 568" stroke="#ff8068" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.62"/>
+  <text x="600" y="583" text-anchor="middle" class="hand small">确定的自动执行 · 不确定的交给人 · 每一步都有可回放证据</text>
+</svg>
