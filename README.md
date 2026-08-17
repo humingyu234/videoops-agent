@@ -18,9 +18,7 @@ VideoOps Agent 面向品牌、电商和内容运营团队。用户只需要给�
 | --- | --- | --- |
 | 品牌/商品事实、口播目标、人物和声音 | 澄清输入、调用工具、等待任务、逐项质检、有限返工、请求批准 | 可下载 MP4、质量结论、人工决定与可回放 Trace |
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/humingyu234/videoops-agent/main/docs/assets/videoops-agent-handdrawn-flow.png" alt="VideoOps Agent 从交付目标到最终 MP4 的手绘流程图" width="960" />
-</p>
+![VideoOps Agent 从交付目标到最终 MP4 的手绘流程图](docs/assets/videoops-agent-handdrawn-flow.png)
 
 ## 为什么这个产品有价值
 
