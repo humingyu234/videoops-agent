@@ -2,9 +2,12 @@ package org.dromara.aivideo.user.agent.service.impl;
 
 import org.dromara.aivideo.agent.dto.AgentRunOrchestrationDTOs;
 import org.dromara.aivideo.agent.dto.AgentRunTraceDTO;
+import org.dromara.aivideo.agent.dto.AgentToolDTOs;
 import org.dromara.aivideo.agent.service.IAgentRunOrchestrationService;
 import org.dromara.aivideo.agent.service.IAgentRunService;
 import org.dromara.aivideo.agent.service.IAgentRunTraceService;
+import org.dromara.aivideo.agent.service.IAgentToolService;
+import org.dromara.aivideo.creation.service.ICreationProjectService;
 import org.dromara.aivideo.digitalhuman.domain.DigitalHumanJobStatus;
 import org.dromara.aivideo.digitalhuman.domain.DigitalHumanJobType;
 import org.dromara.aivideo.digitalhuman.dto.DigitalHumanJobDTO;
@@ -65,17 +68,23 @@ public class AgentRunApplicationServiceImpl implements IAgentRunApplicationServi
     private final IAgentRunOrchestrationService orchestrationService;
     private final IAgentRunTraceService traceService;
     private final IDigitalHumanGenerationService generationService;
+    private final ICreationProjectService projectService;
+    private final IAgentToolService agentToolService;
     private final JsonMapper jsonMapper;
 
     public AgentRunApplicationServiceImpl(IAgentRunService runService,
                                           IAgentRunOrchestrationService orchestrationService,
                                           IAgentRunTraceService traceService,
                                           IDigitalHumanGenerationService generationService,
+                                          ICreationProjectService projectService,
+                                          IAgentToolService agentToolService,
                                           JsonMapper jsonMapper) {
         this.runService = Objects.requireNonNull(runService, "runService");
         this.orchestrationService = Objects.requireNonNull(orchestrationService, "orchestrationService");
         this.traceService = Objects.requireNonNull(traceService, "traceService");
         this.generationService = Objects.requireNonNull(generationService, "generationService");
+        this.projectService = Objects.requireNonNull(projectService, "projectService");
+        this.agentToolService = Objects.requireNonNull(agentToolService, "agentToolService");
         this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
     }
 
@@ -110,10 +119,14 @@ public class AgentRunApplicationServiceImpl implements IAgentRunApplicationServi
                 brief.put("projectTitle", body.getProjectTitle());
             }
             case "project" -> {
+                reusableProject(principal, body.getProjectId(), body.getExpectedRevision());
                 brief.put("projectId", body.getProjectId());
                 brief.put("expectedRevision", body.getExpectedRevision());
             }
-            case "render_task" -> brief.put("taskId", body.getTaskId());
+            case "render_task" -> {
+                reusableRenderTask(principal, body.getTaskId());
+                brief.put("taskId", body.getTaskId());
+            }
             default -> throw new ServiceException("Agent 交付输入无效", 46702);
         }
         IAgentRunService.DeliveryBriefVersionView briefVersion = stableMutation(() ->
@@ -352,6 +365,44 @@ public class AgentRunApplicationServiceImpl implements IAgentRunApplicationServi
             throw new ServiceException("可复用任务不存在或状态无效", 46704);
         }
         return job;
+    }
+
+    private void reusableProject(AppPrincipalSnapshotDTO principal, String projectId, String expectedRevision) {
+        ICreationProjectService.CreationProjectDTO project;
+        try {
+            project = projectService.getOwned(principal.appUserId(), projectId);
+        } catch (ServiceException exception) {
+            throw new ServiceException("可复用任务不存在或状态无效", 46704);
+        }
+        long revision = positiveIdOrZero(expectedRevision);
+        boolean valid = project != null && Objects.equals(projectId, project.projectId())
+            && project.currentDraftRevision() == revision && "digital_human_job".equals(project.sourceType())
+            && positiveIdOrZero(project.sourceId()) > 0 && Set.of("editing", "ready").contains(project.projectStatus())
+            && project.canvasWidth() > 0 && project.canvasHeight() > 0 && project.frameRate() > 0
+            && project.durationMs() > 0 && "timeline-1".equals(project.schemaVersion());
+        if (!valid) {
+            throw new ServiceException("可复用任务不存在或状态无效", 46704);
+        }
+    }
+
+    private void reusableRenderTask(AppPrincipalSnapshotDTO principal, String taskId) {
+        ObjectNode arguments = jsonMapper.createObjectNode();
+        arguments.put("taskId", taskId);
+        AgentToolDTOs.Result result;
+        try {
+            result = agentToolService.execute(principal,
+                new AgentToolDTOs.Call("get_timeline_render_status", arguments));
+        } catch (ServiceException exception) {
+            throw new ServiceException("可复用任务不存在或状态无效", 46704);
+        }
+        boolean valid = result instanceof AgentToolDTOs.RenderStatusResult render
+            && Objects.equals(taskId, render.taskId()) && "success".equals(render.status())
+            && positiveIdOrZero(render.projectId()) > 0 && positiveIdOrZero(render.draftRevision()) > 0
+            && positiveIdOrZero(render.resultAssetId()) > 0 && "digital_human_job".equals(render.sourceType())
+            && positiveIdOrZero(render.sourceId()) > 0;
+        if (!valid) {
+            throw new ServiceException("可复用任务不存在或状态无效", 46704);
+        }
     }
 
     private Set<String> createPermissions(String startAt) {

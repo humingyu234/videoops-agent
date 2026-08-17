@@ -2,9 +2,12 @@ package org.dromara.aivideo.user.agent.service.impl;
 
 import org.dromara.aivideo.agent.dto.AgentRunOrchestrationDTOs;
 import org.dromara.aivideo.agent.dto.AgentRunTraceDTO;
+import org.dromara.aivideo.agent.dto.AgentToolDTOs;
 import org.dromara.aivideo.agent.service.IAgentRunOrchestrationService;
 import org.dromara.aivideo.agent.service.IAgentRunService;
 import org.dromara.aivideo.agent.service.IAgentRunTraceService;
+import org.dromara.aivideo.agent.service.IAgentToolService;
+import org.dromara.aivideo.creation.service.ICreationProjectService;
 import org.dromara.aivideo.digitalhuman.domain.DigitalHumanJobStage;
 import org.dromara.aivideo.digitalhuman.domain.DigitalHumanJobStatus;
 import org.dromara.aivideo.digitalhuman.domain.DigitalHumanJobType;
@@ -166,6 +169,7 @@ class AgentRunApplicationServiceImplTest {
     @Test
     void acceptsProjectAndRenderShapesButRejectsConflictingKnownFieldsBeforeWrites() {
         Fixture projectFixture = fixture();
+        when(projectFixture.projects.getOwned(7L, "701")).thenReturn(project());
         CreateAgentRunBo project = new CreateAgentRunBo();
         project.setStartAt("project");
         project.setProjectId("701");
@@ -177,7 +181,26 @@ class AgentRunApplicationServiceImplTest {
         verify(projectFixture.runs).appendDeliveryBrief(any(), projectBrief.capture());
         assertThat(projectBrief.getValue().briefJson()).isEqualTo(
             "{\"startAt\":\"project\",\"projectId\":\"701\",\"expectedRevision\":\"3\"}");
-        verifyNoInteractions(projectFixture.generation);
+        verify(projectFixture.projects).getOwned(7L, "701");
+        verifyNoInteractions(projectFixture.generation, projectFixture.tools);
+
+        Fixture renderFixture = fixture();
+        when(renderFixture.tools.execute(any(), any())).thenReturn(renderStatus("success"));
+        CreateAgentRunBo render = new CreateAgentRunBo();
+        render.setStartAt("render_task");
+        render.setTaskId("801");
+        render.setIdempotencyKey("reuse-render");
+        renderFixture.service.create(principal(PERMISSIONS), render);
+        ArgumentCaptor<IAgentRunService.AppendDeliveryBriefCommand> renderBrief =
+            ArgumentCaptor.forClass(IAgentRunService.AppendDeliveryBriefCommand.class);
+        ArgumentCaptor<AgentToolDTOs.Call> renderCall = ArgumentCaptor.forClass(AgentToolDTOs.Call.class);
+        verify(renderFixture.runs).appendDeliveryBrief(any(), renderBrief.capture());
+        verify(renderFixture.tools).execute(any(), renderCall.capture());
+        assertThat(renderBrief.getValue().briefJson())
+            .isEqualTo("{\"startAt\":\"render_task\",\"taskId\":\"801\"}");
+        assertThat(renderCall.getValue().toolName()).isEqualTo("get_timeline_render_status");
+        assertThat(renderCall.getValue().arguments().get("taskId").textValue()).isEqualTo("801");
+        verifyNoInteractions(renderFixture.generation, renderFixture.projects);
 
         Fixture invalidFixture = fixture();
         CreateAgentRunBo invalid = new CreateAgentRunBo();
@@ -189,7 +212,37 @@ class AgentRunApplicationServiceImplTest {
             .isInstanceOf(ServiceException.class)
             .extracting(error -> ((ServiceException) error).getCode()).isEqualTo(46702);
         verifyNoInteractions(invalidFixture.runs, invalidFixture.orchestration,
-            invalidFixture.trace, invalidFixture.generation);
+            invalidFixture.trace, invalidFixture.generation, invalidFixture.projects, invalidFixture.tools);
+    }
+
+    @Test
+    void rejectsInvalidProjectOrRenderFactsBeforeAnyContractWrite() {
+        Fixture projectFixture = fixture();
+        when(projectFixture.projects.getOwned(7L, "701")).thenReturn(new ICreationProjectService.CreationProjectDTO(
+            "701", "T7 复用", "digital_human_job", "601", "711", "712", "ready",
+            1080, 1920, 30, 25_800L, 4L, "timeline-1", "901", Instant.EPOCH, Instant.EPOCH));
+        CreateAgentRunBo project = new CreateAgentRunBo();
+        project.setStartAt("project");
+        project.setProjectId("701");
+        project.setExpectedRevision("3");
+        project.setIdempotencyKey("reuse-project");
+
+        assertReusableFactRejected(() -> projectFixture.service.create(principal(PERMISSIONS), project));
+        verify(projectFixture.runs, never()).appendDeliveryBrief(any(), any());
+        verifyNoInteractions(projectFixture.orchestration, projectFixture.trace,
+            projectFixture.generation, projectFixture.tools);
+
+        Fixture renderFixture = fixture();
+        when(renderFixture.tools.execute(any(), any())).thenReturn(renderStatus("running"));
+        CreateAgentRunBo render = new CreateAgentRunBo();
+        render.setStartAt("render_task");
+        render.setTaskId("801");
+        render.setIdempotencyKey("reuse-render");
+
+        assertReusableFactRejected(() -> renderFixture.service.create(principal(PERMISSIONS), render));
+        verify(renderFixture.runs, never()).appendDeliveryBrief(any(), any());
+        verifyNoInteractions(renderFixture.orchestration, renderFixture.trace,
+            renderFixture.generation, renderFixture.projects);
     }
 
     @Test
@@ -318,6 +371,8 @@ class AgentRunApplicationServiceImplTest {
         IAgentRunOrchestrationService orchestration = mock(IAgentRunOrchestrationService.class);
         IAgentRunTraceService trace = mock(IAgentRunTraceService.class);
         IDigitalHumanGenerationService generation = mock(IDigitalHumanGenerationService.class);
+        ICreationProjectService projects = mock(ICreationProjectService.class);
+        IAgentToolService tools = mock(IAgentToolService.class);
         when(runs.appendDeliveryBrief(any(), any())).thenReturn(
             new IAgentRunService.DeliveryBriefVersionView(101L, 201L, 1L, null,
                 "delivery-brief-1", "image_to_digital_human_video", "brief-hash"));
@@ -332,8 +387,8 @@ class AgentRunApplicationServiceImplTest {
             103L, "durable_facts", "queued", 1L, 0L, List.of(
             new AgentRunTraceDTO.Fact(1, "agent_run", 103L, "agent_run", null, "queued",
                 null, null, null, null, null, null, null, Instant.EPOCH))));
-        return new Fixture(runs, orchestration, trace, generation,
-            new AgentRunApplicationServiceImpl(runs, orchestration, trace, generation,
+        return new Fixture(runs, orchestration, trace, generation, projects, tools,
+            new AgentRunApplicationServiceImpl(runs, orchestration, trace, generation, projects, tools,
                 JsonMapper.builder().build()));
     }
 
@@ -387,6 +442,26 @@ class AgentRunApplicationServiceImplTest {
             DigitalHumanJobStage.COMPLETED, 100, confirmed, true, null, null, inputHash);
     }
 
+    private ICreationProjectService.CreationProjectDTO project() {
+        return new ICreationProjectService.CreationProjectDTO(
+            "701", "T7 复用", "digital_human_job", "601", "711", "712", "ready",
+            1080, 1920, 30, 25_800L, 3L, "timeline-1", "901", Instant.EPOCH, Instant.EPOCH);
+    }
+
+    private AgentToolDTOs.RenderStatusResult renderStatus(String status) {
+        return new AgentToolDTOs.RenderStatusResult(
+            "801", status, "success".equals(status) ? "completed" : "rendering",
+            "success".equals(status) ? 100 : 50, "701", "3",
+            "success".equals(status) ? "901" : null, false, false, null, null,
+            "digital_human_job", "601", "T7 复用");
+    }
+
+    private void assertReusableFactRejected(org.assertj.core.api.ThrowableAssert.ThrowingCallable operation) {
+        assertThatThrownBy(operation).isInstanceOf(ServiceException.class)
+            .hasMessage("可复用任务不存在或状态无效")
+            .extracting(error -> ((ServiceException) error).getCode()).isEqualTo(46704);
+    }
+
     private AppPrincipalSnapshotDTO principal(Set<String> permissions) {
         return principal(permissions, 7L);
     }
@@ -419,6 +494,8 @@ class AgentRunApplicationServiceImplTest {
         IAgentRunOrchestrationService orchestration,
         IAgentRunTraceService trace,
         IDigitalHumanGenerationService generation,
+        ICreationProjectService projects,
+        IAgentToolService tools,
         AgentRunApplicationServiceImpl service
     ) {
     }
