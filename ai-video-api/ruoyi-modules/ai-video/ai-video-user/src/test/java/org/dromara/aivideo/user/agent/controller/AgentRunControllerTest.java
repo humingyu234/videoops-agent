@@ -83,8 +83,14 @@ class AgentRunControllerTest {
     }
 
     @Test
-    void strictBodiesRejectOwnerWorkerLeaseAndUnknownFields() {
+    void strictBodiesRejectOwnerWorkerLeaseAndUnknownFields() throws Exception {
         JsonMapper json = JsonMapper.builder().build();
+        CreateAgentRunBo reuse = json.readValue("""
+            {"startAt":"video_job","videoJobId":"601",
+             "projectTitle":"复用视频","idempotencyKey":"reuse-video"}
+            """, CreateAgentRunBo.class);
+        assertThat(reuse.getVideoJobId()).isEqualTo("601");
+        assertThat(reuse.getScriptText()).isNull();
         assertThatThrownBy(() -> json.readValue("""
             {"startAt":"new","scriptText":"x","referenceVoiceId":"11","portraitId":"12",
              "projectTitle":"p","idempotencyKey":"k","ownerId":"7"}

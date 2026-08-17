@@ -14,13 +14,22 @@ public record DigitalHumanJobDTO(
     boolean voiceConfirmed,
     boolean outputAvailable,
     String errorCode,
-    String errorMessage
+    String errorMessage,
+    String inputHash
 ) {
+    public DigitalHumanJobDTO(Long jobId, Long parentJobId, DigitalHumanJobType jobType,
+                              DigitalHumanJobStatus status, DigitalHumanJobStage stage,
+                              Integer progress, boolean voiceConfirmed, boolean outputAvailable,
+                              String errorCode, String errorMessage) {
+        this(jobId, parentJobId, jobType, status, stage, progress, voiceConfirmed, outputAvailable,
+            errorCode, errorMessage, null);
+    }
+
     public DigitalHumanJobDTO(Long jobId, Long parentJobId, DigitalHumanJobType jobType,
                               DigitalHumanJobStatus status, DigitalHumanJobStage stage,
                               Integer progress, boolean voiceConfirmed, boolean outputAvailable,
                               String errorMessage) {
         this(jobId, parentJobId, jobType, status, stage, progress, voiceConfirmed, outputAvailable,
-            null, errorMessage);
+            null, errorMessage, null);
     }
 }

@@ -251,6 +251,66 @@ describe('agent API contract', () => {
     ]);
   });
 
+  it.each([
+    {
+      startAt: 'voice_job',
+      voiceJobId: '501',
+      portraitId: '201',
+      projectTitle: '复用声音',
+      idempotencyKey: 'reuse-voice',
+    },
+    {
+      startAt: 'video_job',
+      videoJobId: '601',
+      projectTitle: '复用视频',
+      idempotencyKey: 'reuse-video',
+    },
+    {
+      startAt: 'project',
+      projectId: '701',
+      expectedRevision: '2',
+      idempotencyKey: 'reuse-project',
+    },
+    {
+      startAt: 'render_task',
+      taskId: '801',
+      idempotencyKey: 'reuse-render',
+    },
+  ] as const)('sends only the exact $startAt reuse fields', async (input) => {
+    const request = vi.fn().mockResolvedValue(detailWire());
+    const api = createAgentApi({ request });
+
+    await api.create(input);
+
+    expect(request).toHaveBeenCalledWith('/api/agent/runs', {
+      method: 'POST',
+      data: input,
+    });
+  });
+
+  it('rejects malformed or mixed reuse inputs before any request', async () => {
+    const request = vi.fn();
+    const api = createAgentApi({ request });
+
+    await expect(
+      api.create({
+        startAt: 'video_job',
+        videoJobId: '601',
+        projectTitle: '复用视频',
+        idempotencyKey: 'reuse-video',
+        portraitId: '201',
+      } as never),
+    ).rejects.toThrow(/unknown fields/);
+    await expect(
+      api.create({
+        startAt: 'render_task',
+        taskId: '0',
+        idempotencyKey: 'reuse-render',
+      }),
+    ).rejects.toThrow(/taskId/);
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it('rejects owner, worker, lease, and conflicting approval identities locally', async () => {
     const request = vi.fn();
     const api = createAgentApi({ request });

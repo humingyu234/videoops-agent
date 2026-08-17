@@ -47,8 +47,15 @@ public final class AgentToolDTOs {
         boolean voiceConfirmed,
         boolean outputAvailable,
         String errorCode,
-        String safeMessage
+        String safeMessage,
+        String inputHash
     ) implements Result {
+        public GenerationJobResult(String jobId, String parentJobId, String jobType, String status,
+                                   String stage, Integer progress, boolean voiceConfirmed,
+                                   boolean outputAvailable, String errorCode, String safeMessage) {
+            this(jobId, parentJobId, jobType, status, stage, progress, voiceConfirmed, outputAvailable,
+                errorCode, safeMessage, null);
+        }
     }
 
     public record ProjectResult(

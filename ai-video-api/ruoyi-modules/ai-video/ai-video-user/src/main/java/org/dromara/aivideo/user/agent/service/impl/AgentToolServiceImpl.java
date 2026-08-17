@@ -218,7 +218,7 @@ public class AgentToolServiceImpl implements IAgentToolService {
         return new AgentToolDTOs.GenerationJobResult(Long.toString(value.jobId()),
             value.parentJobId() == null ? null : Long.toString(value.parentJobId()), value.jobType().getValue(),
             value.status().getValue(), value.stage().getValue(), value.progress(), value.voiceConfirmed(),
-            value.outputAvailable(), value.errorCode(), value.errorMessage());
+            value.outputAvailable(), value.errorCode(), value.errorMessage(), value.inputHash());
     }
 
     private AgentToolDTOs.RenderTaskResult renderTask(AiTaskDTO task) {

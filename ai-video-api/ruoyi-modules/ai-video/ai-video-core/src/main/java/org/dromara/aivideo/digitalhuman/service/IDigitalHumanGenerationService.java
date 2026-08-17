@@ -15,5 +15,8 @@ public interface IDigitalHumanGenerationService {
 
     DigitalHumanJobDTO getJob(Long jobId, DigitalHumanOwnerDTO owner);
 
+    /** Reads the persisted owner-scoped job without polling or dispatching a Provider. */
+    DigitalHumanJobDTO getStoredJob(Long jobId, DigitalHumanOwnerDTO owner);
+
     DigitalHumanMediaContentDTO getOutputMedia(Long jobId, DigitalHumanOwnerDTO owner);
 }

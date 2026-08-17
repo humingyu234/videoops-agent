@@ -195,6 +195,11 @@ public class DigitalHumanGenerationServiceImpl implements IDigitalHumanGeneratio
     }
 
     @Override
+    public DigitalHumanJobDTO getStoredJob(Long jobId, DigitalHumanOwnerDTO owner) {
+        return toDto(requireOwned(jobId, owner));
+    }
+
+    @Override
     public DigitalHumanMediaContentDTO getOutputMedia(Long jobId, DigitalHumanOwnerDTO owner) {
         DigitalHumanGenerationJob job = requireOwned(jobId, owner);
         if (job.getStatus() != DigitalHumanJobStatus.SUCCEEDED || job.getOutputMediaKey() == null) {
@@ -791,7 +796,7 @@ public class DigitalHumanGenerationServiceImpl implements IDigitalHumanGeneratio
         return new DigitalHumanJobDTO(job.getId(), job.getParentJobId(), job.getJobType(), job.getStatus(),
             job.getStage(), job.getProgress(), Boolean.TRUE.equals(job.getVoiceConfirmed()),
             job.getStatus() == DigitalHumanJobStatus.SUCCEEDED && job.getOutputMediaKey() != null,
-            job.getErrorCode(), job.getErrorMessage());
+            job.getErrorCode(), job.getErrorMessage(), job.getInputHash());
     }
 
     private String sha256(String domain, byte[]... values) {

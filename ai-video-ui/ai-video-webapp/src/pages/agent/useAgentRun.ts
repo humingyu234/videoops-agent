@@ -4,6 +4,7 @@ import {
   getRuntimeAgentApi,
 } from '@/services/ai-video/agent/api';
 import type {
+  AgentPlanStartAt,
   AgentRunDetail,
   AgentRunStatus,
   CreateAgentRunInput,
@@ -30,10 +31,16 @@ const CANCELLABLE_STATUSES = new Set<AgentRunStatus>([
 ]);
 
 export type AgentFormValues = {
-  projectTitle: string;
-  scriptText: string;
-  portraitId: string;
-  referenceVoiceId: string;
+  startAt: AgentPlanStartAt;
+  projectTitle?: string;
+  scriptText?: string;
+  portraitId?: string;
+  referenceVoiceId?: string;
+  voiceJobId?: string;
+  videoJobId?: string;
+  projectId?: string;
+  expectedRevision?: string;
+  taskId?: string;
 };
 
 type UseAgentRunOptions = {
@@ -57,13 +64,65 @@ function createIntentKey(): string {
   );
 }
 
-function normalizedValues(values: AgentFormValues): AgentFormValues {
-  return {
-    projectTitle: values.projectTitle.trim(),
-    scriptText: values.scriptText.trim(),
-    portraitId: values.portraitId,
-    referenceVoiceId: values.referenceVoiceId,
-  };
+function requiredText(value: string | undefined, field: string): string {
+  const normalized = value?.trim();
+  if (!normalized) throw new Error(`${field}不能为空。`);
+  return normalized;
+}
+
+function requiredId(value: string | undefined, field: string): string {
+  const normalized = value?.trim();
+  if (!normalized || !POSITIVE_DECIMAL_ID.test(normalized)) {
+    throw new Error(`${field}必须是正十进制 ID。`);
+  }
+  return normalized;
+}
+
+function createInput(
+  values: AgentFormValues,
+  idempotencyKey: string,
+): CreateAgentRunInput {
+  switch (values.startAt) {
+    case 'new':
+      return {
+        startAt: 'new',
+        projectTitle: requiredText(values.projectTitle, '项目标题'),
+        scriptText: requiredText(values.scriptText, '中文口播脚本'),
+        portraitId: requiredId(values.portraitId, '人物 ID'),
+        referenceVoiceId: requiredId(values.referenceVoiceId, '原声音 ID'),
+        idempotencyKey,
+      };
+    case 'voice_job':
+      return {
+        startAt: 'voice_job',
+        voiceJobId: requiredId(values.voiceJobId, '成功声音任务 ID'),
+        portraitId: requiredId(values.portraitId, '人物 ID'),
+        projectTitle: requiredText(values.projectTitle, '项目标题'),
+        idempotencyKey,
+      };
+    case 'video_job':
+      return {
+        startAt: 'video_job',
+        videoJobId: requiredId(values.videoJobId, '成功视频任务 ID'),
+        projectTitle: requiredText(values.projectTitle, '项目标题'),
+        idempotencyKey,
+      };
+    case 'project':
+      return {
+        startAt: 'project',
+        projectId: requiredId(values.projectId, '项目 ID'),
+        expectedRevision: requiredId(values.expectedRevision, '草稿版本'),
+        idempotencyKey,
+      };
+    case 'render_task':
+      return {
+        startAt: 'render_task',
+        taskId: requiredId(values.taskId, '成功渲染任务 ID'),
+        idempotencyKey,
+      };
+    default:
+      throw new Error('执行起点无效。');
+  }
 }
 
 function readRouteRunId(): string | undefined | null {
@@ -241,16 +300,18 @@ export function useAgentRun({
   }, [assetsClient, detail?.finalOutputAssetId]);
 
   const createRun = async (values: AgentFormValues) => {
-    const normalized = normalizedValues(values);
-    const fingerprint = JSON.stringify(normalized);
+    let candidate: CreateAgentRunInput;
+    try {
+      candidate = createInput(values, 'intent');
+    } catch (error) {
+      setActionError(messageFrom(error, '创建参数无效。'));
+      return;
+    }
+    const fingerprint = JSON.stringify({ ...candidate, idempotencyKey: null });
     if (intentRef.current?.fingerprint !== fingerprint) {
       intentRef.current = { fingerprint, idempotencyKey: createIntentKey() };
     }
-    const input: CreateAgentRunInput = {
-      startAt: 'new',
-      ...normalized,
-      idempotencyKey: intentRef.current.idempotencyKey,
-    };
+    const input = createInput(values, intentRef.current.idempotencyKey);
     setBusyAction('create');
     setActionError(undefined);
     try {

@@ -9,7 +9,7 @@
 | T1 人工黄金链：`/studio` → IndexTTS2 / ComfyUI → 字幕与渲染 → MP4 | `REAL` | `PASS`，保留一条本机试运行成品 |
 | T2–T6：可恢复 AgentRun、白名单工具、质量门禁和有限返工 | `LOCAL` | 阶段 checkpoint 已有本机 MySQL / FFmpeg 及受控 adapter 边界证据 |
 | T7 默认 `/agent` 全链与四种演示 | `PARTIAL / BLOCKED` | 真实 AgentRun、初始批准、过期批准拒绝、同任务重启查询与转人工已运行；成功成品和局部返工尚未到达 |
-| 私有 GitHub 交付目标 | `LOCAL` | `origin` 已指向 [humingyu234/videoops-agent](https://github.com/humingyu234/videoops-agent)，远端 `main` 仍停在 T6 checkpoint；T7 当前改动未 push，公开可见性未验证且冻结 |
+| 公开 GitHub 源码镜像 | `LOCAL` | [humingyu234/videoops-agent](https://github.com/humingyu234/videoops-agent) 已公开；`origin/main` 当前为 `3740c5e38cc6f19f466c34b16fa1cbf5561966a7`，本地 T7 复用入口 checkpoint 未由本线程 push，远端操作由监督线程负责 |
 
 `REAL` 表示真实 Provider 或真实媒体边界已经运行；`LOCAL` 表示仅在本机隔离资源或受控 fake 外边界验证；`NOT_RUN` 表示不能作为完成声明。
 
@@ -79,10 +79,10 @@ scripts/           本地启动、验证与安全检查
 
 代码来源和脱敏基线见 [docs/BASELINE.md](docs/BASELINE.md)。参与开发先读 [AGENTS.md](AGENTS.md) 与 [RULES.md](RULES.md)；产品范围见 [docs/PROJECT.md](docs/PROJECT.md)，路线见 [docs/PLAN.md](docs/PLAN.md)。
 
-## 私有使用、第三方组件与安全
+## 源码许可、第三方组件与安全
 
-本仓库当前只面向私有评审、授权开发与试运行；公开发布和公开可见性均未获放行。原创贡献部分不授予公开使用许可，具体见 [LICENSE](LICENSE)。上游代码、字体和依赖仍分别适用其自身许可证，已核验的根层提示见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+本仓库现已公开可见；公开可见性不等于授予使用许可。原创贡献部分仍按 [LICENSE](LICENSE) 保留权利，上游代码、字体和依赖分别适用其自身许可证，已核验的根层提示见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 - 不提交密钥、口令、Token、签名 URL、私有地址、证书、未授权素材或本机媒体产物。
 - 本机配置只通过 Git-ignored 的安全载体和当前进程注入；默认配置保持 Provider fail-closed。
-- push 前必须重新运行秘密、媒体与公开快照门禁，并人工复核目标仓库与可见性。
+- 远端 push、PR 与 Pages 由监督线程执行；每次更新前仍须重新运行秘密、媒体与公开快照门禁，并复核目标 commit。

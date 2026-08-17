@@ -181,6 +181,32 @@ describe('/agent product entry', () => {
     ).toBe('401');
   });
 
+  it('creates a video-job reuse run without resubmitting browser asset inputs', async () => {
+    const clients = dependencies();
+    render(<AgentPage {...clients} pollingIntervalMs={5} />);
+    await screen.findByText('人物 A');
+
+    fireEvent.mouseDown(screen.getByLabelText('执行起点'));
+    fireEvent.click(await screen.findByText('复用成功视频任务'));
+    fireEvent.change(await screen.findByLabelText('成功视频任务 ID'), {
+      target: { value: '601' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '创建并开始受限执行' }));
+
+    await waitFor(() => expect(clients.agentClient.create).toHaveBeenCalled());
+    const input = vi.mocked(clients.agentClient.create).mock.calls[0]?.[0];
+    expect(input).toMatchObject({
+      startAt: 'video_job',
+      videoJobId: '601',
+      projectTitle: 'VideoOps Agent 黄金链',
+    });
+    expect(Object.keys(input ?? {}).sort()).toEqual(
+      ['idempotencyKey', 'projectTitle', 'startAt', 'videoJobId'].sort(),
+    );
+    expect(screen.queryByLabelText('Origin 原声音')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Ready 人物')).not.toBeInTheDocument();
+  });
+
   it('fences approval with exact revisions and downloads the exact final asset', async () => {
     const clients = dependencies();
     render(<AgentPage {...clients} pollingIntervalMs={5} />);

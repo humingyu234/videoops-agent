@@ -41,6 +41,7 @@ import static org.mockito.Mockito.when;
 class AgentRunOrchestrationServiceImplTest {
 
     private static final Instant NOW = Instant.parse("2026-08-16T00:00:00Z");
+    private static final String INPUT_HASH = "a".repeat(64);
     private static final Set<String> ALL_PERMISSIONS = Set.of(
         "aivideo:studio:generate", "aivideo:studio:query", "aivideo:voice:query",
         "aivideo:portrait:query", "aivideo:creation:edit", "aivideo:creation:generate",
@@ -56,8 +57,10 @@ class AgentRunOrchestrationServiceImplTest {
         AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
         List<String> briefs = List.of(
             briefNew(),
-            "{\"startAt\":\"voice_job\",\"voiceJobId\":\"501\",\"portraitId\":\"401\",\"projectTitle\":\"黄金链\"}",
-            "{\"startAt\":\"video_job\",\"videoJobId\":\"601\",\"projectTitle\":\"黄金链\"}",
+            "{\"startAt\":\"voice_job\",\"voiceJobId\":\"501\",\"inputHash\":\"" + INPUT_HASH
+                + "\",\"portraitId\":\"401\",\"projectTitle\":\"黄金链\"}",
+            "{\"startAt\":\"video_job\",\"videoJobId\":\"601\",\"inputHash\":\"" + INPUT_HASH
+                + "\",\"projectTitle\":\"黄金链\"}",
             "{\"startAt\":\"project\",\"projectId\":\"701\",\"expectedRevision\":\"3\"}",
             "{\"startAt\":\"render_task\",\"taskId\":\"801\"}"
         );
@@ -176,6 +179,55 @@ class AgentRunOrchestrationServiceImplTest {
     }
 
     @Test
+    void succeededVideoReuseQueriesAndParksTheExactStoredJobWithoutAnySubmit() {
+        AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
+        String brief = "{\"startAt\":\"video_job\",\"videoJobId\":\"601\",\"inputHash\":\""
+            + INPUT_HASH + "\",\"projectTitle\":\"黄金链\"}";
+        when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(snapshot(
+            run("queued", 0, null, null, 0), brief, profile(0, 1)));
+        when(runService.claim(eq(principal), any())).thenReturn(lease(null, null));
+        when(toolService.execute(eq(principal), any())).thenReturn(video("succeeded"));
+        when(runService.waitForExternalTask(eq(principal), any()))
+            .thenReturn(waiting("digital_human_generation", 601L));
+
+        AgentRunOrchestrationDTOs.AdvanceResult result = service().advance(principal, command());
+
+        assertThat(result.waitingTaskId()).isEqualTo(601L);
+        ArgumentCaptor<AgentToolDTOs.Call> call = ArgumentCaptor.forClass(AgentToolDTOs.Call.class);
+        verify(toolService).execute(eq(principal), call.capture());
+        assertThat(call.getValue().toolName()).isEqualTo("get_generation_status");
+        assertThat(call.getValue().arguments().get("jobId").textValue()).isEqualTo("601");
+    }
+
+    @Test
+    void reuseRejectsWrongTypeNonSucceededOrInputHashMismatchBeforeParking() {
+        AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
+        String voiceBrief = "{\"startAt\":\"voice_job\",\"voiceJobId\":\"501\",\"inputHash\":\""
+            + INPUT_HASH + "\",\"portraitId\":\"401\",\"projectTitle\":\"黄金链\"}";
+        String videoBrief = "{\"startAt\":\"video_job\",\"videoJobId\":\"601\",\"inputHash\":\""
+            + INPUT_HASH + "\",\"projectTitle\":\"黄金链\"}";
+        when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(
+            snapshot(run("queued", 0, null, null, 0), voiceBrief, profile(1, 1)),
+            snapshot(run("queued", 0, null, null, 0), videoBrief, profile(0, 1)),
+            snapshot(run("queued", 0, null, null, 0), videoBrief, profile(0, 1)));
+        when(runService.claim(eq(principal), any())).thenReturn(
+            lease(null, null), lease(null, null), lease(null, null));
+        AgentToolDTOs.GenerationJobResult wrongType = video("succeeded");
+        AgentToolDTOs.GenerationJobResult running = video("running");
+        AgentToolDTOs.GenerationJobResult wrongHash = new AgentToolDTOs.GenerationJobResult(
+            "601", "501", "video_generate", "succeeded", "completed", 100,
+            true, true, null, null, "b".repeat(64));
+        when(toolService.execute(eq(principal), any())).thenReturn(wrongType, running, wrongHash);
+        when(runService.stopOwnedRun(eq(principal), any())).thenReturn(true);
+
+        assertThat(service().advance(principal, command()).errorCode()).isEqualTo("AGENT_TOOL_RESULT_INVALID");
+        assertThat(service().advance(principal, command()).errorCode()).isEqualTo("AGENT_TOOL_RESULT_INVALID");
+        assertThat(service().advance(principal, command()).errorCode()).isEqualTo("AGENT_TOOL_RESULT_INVALID");
+
+        verify(runService, never()).waitForExternalTask(any(), any());
+    }
+
+    @Test
     void waitingRecoveryQueriesThePersistedTaskAndDefersWithoutAnySubmit() {
         AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
         when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(snapshot(
@@ -259,7 +311,8 @@ class AgentRunOrchestrationServiceImplTest {
         AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
         when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(snapshot(
             run("waiting_external_task", 0, "digital_human_generation", 601L, 0),
-            "{\"startAt\":\"video_job\",\"videoJobId\":\"601\",\"projectTitle\":\"黄金链\"}",
+            "{\"startAt\":\"video_job\",\"videoJobId\":\"601\",\"inputHash\":\"" + INPUT_HASH
+                + "\",\"projectTitle\":\"黄金链\"}",
             profile(2, 1)));
         when(runService.claim(eq(principal), any())).thenReturn(lease("digital_human_generation", 601L));
         when(toolService.execute(eq(principal), any())).thenReturn(
@@ -530,13 +583,13 @@ class AgentRunOrchestrationServiceImplTest {
     private AgentToolDTOs.GenerationJobResult voice(String status, boolean confirmed, boolean output) {
         return new AgentToolDTOs.GenerationJobResult("501", null, "voice_generate", status,
             "succeeded".equals(status) ? "completed" : status, "succeeded".equals(status) ? 100 : 20,
-            confirmed, output, null, null);
+            confirmed, output, null, null, INPUT_HASH);
     }
 
     private AgentToolDTOs.GenerationJobResult video(String status) {
         return new AgentToolDTOs.GenerationJobResult("601", "501", "video_generate", status,
             "succeeded".equals(status) ? "completed" : status, "succeeded".equals(status) ? 100 : 20,
-            true, "succeeded".equals(status), null, null);
+            true, "succeeded".equals(status), null, null, INPUT_HASH);
     }
 
     private AgentToolDTOs.ProjectResult project() {

@@ -60,31 +60,70 @@ function assertRevision(value: number, field: string, minimum: number): void {
 }
 
 function assertCreateInput(input: CreateAgentRunInput): void {
-  assertExactKeys(input, [
-    'startAt',
-    'scriptText',
-    'referenceVoiceId',
-    'portraitId',
-    'projectTitle',
-    'idempotencyKey',
-  ]);
-  if (input.startAt !== 'new') invalid('startAt must be new');
-  if (
-    !input.scriptText.trim() ||
-    [...input.scriptText].length > 1_000
-  ) {
-    invalid('scriptText is invalid');
+  switch (input.startAt) {
+    case 'new':
+      assertExactKeys(input, [
+        'startAt',
+        'scriptText',
+        'referenceVoiceId',
+        'portraitId',
+        'projectTitle',
+        'idempotencyKey',
+      ]);
+      if (!input.scriptText.trim() || [...input.scriptText].length > 1_000) {
+        invalid('scriptText is invalid');
+      }
+      assertId(input.referenceVoiceId, 'referenceVoiceId');
+      assertId(input.portraitId, 'portraitId');
+      assertProjectTitle(input.projectTitle);
+      break;
+    case 'voice_job':
+      assertExactKeys(input, [
+        'startAt',
+        'voiceJobId',
+        'portraitId',
+        'projectTitle',
+        'idempotencyKey',
+      ]);
+      assertId(input.voiceJobId, 'voiceJobId');
+      assertId(input.portraitId, 'portraitId');
+      assertProjectTitle(input.projectTitle);
+      break;
+    case 'video_job':
+      assertExactKeys(input, [
+        'startAt',
+        'videoJobId',
+        'projectTitle',
+        'idempotencyKey',
+      ]);
+      assertId(input.videoJobId, 'videoJobId');
+      assertProjectTitle(input.projectTitle);
+      break;
+    case 'project':
+      assertExactKeys(input, [
+        'startAt',
+        'projectId',
+        'expectedRevision',
+        'idempotencyKey',
+      ]);
+      assertId(input.projectId, 'projectId');
+      assertId(input.expectedRevision, 'expectedRevision');
+      break;
+    case 'render_task':
+      assertExactKeys(input, ['startAt', 'taskId', 'idempotencyKey']);
+      assertId(input.taskId, 'taskId');
+      break;
+    default:
+      invalid('startAt is invalid');
   }
-  if (
-    !input.projectTitle.trim() ||
-    [...input.projectTitle].length > 128
-  ) {
-    invalid('projectTitle is invalid');
-  }
-  assertId(input.referenceVoiceId, 'referenceVoiceId');
-  assertId(input.portraitId, 'portraitId');
   if (!IDEMPOTENCY_KEY.test(input.idempotencyKey)) {
     invalid('idempotencyKey is invalid');
+  }
+}
+
+function assertProjectTitle(value: string): void {
+  if (!value.trim() || [...value].length > 128) {
+    invalid('projectTitle is invalid');
   }
 }
 

@@ -5,6 +5,11 @@ import org.dromara.aivideo.agent.dto.AgentRunTraceDTO;
 import org.dromara.aivideo.agent.service.IAgentRunOrchestrationService;
 import org.dromara.aivideo.agent.service.IAgentRunService;
 import org.dromara.aivideo.agent.service.IAgentRunTraceService;
+import org.dromara.aivideo.digitalhuman.domain.DigitalHumanJobStatus;
+import org.dromara.aivideo.digitalhuman.domain.DigitalHumanJobType;
+import org.dromara.aivideo.digitalhuman.dto.DigitalHumanJobDTO;
+import org.dromara.aivideo.digitalhuman.dto.DigitalHumanOwnerDTO;
+import org.dromara.aivideo.digitalhuman.service.IDigitalHumanGenerationService;
 import org.dromara.aivideo.identity.dto.AppPrincipalSnapshotDTO;
 import org.dromara.aivideo.identity.dto.AppWorkspaceSessionSnapshotDTO;
 import org.dromara.aivideo.identity.security.AppAuditRequestContextHolder;
@@ -16,6 +21,7 @@ import org.dromara.aivideo.user.agent.domain.vo.AgentRunDetailVo;
 import org.dromara.aivideo.user.agent.service.IAgentRunApplicationService;
 import org.dromara.common.core.exception.ServiceException;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 
@@ -32,40 +38,84 @@ public class AgentRunApplicationServiceImpl implements IAgentRunApplicationServi
 
     private static final Pattern CLIENT_KEY = Pattern.compile("[A-Za-z0-9._:-]{1,48}");
     private static final Pattern POSITIVE_ID = Pattern.compile("[1-9][0-9]{0,18}");
+    private static final Pattern SHA256 = Pattern.compile("[a-f0-9]{64}");
     private static final Set<String> READ_PERMISSIONS = Set.of("aivideo:studio:query");
     private static final Set<String> MUTATION_PERMISSIONS = Set.of("aivideo:studio:generate");
+    private static final Set<String> ADVANCE_BASE_PERMISSIONS = Set.of(
+        "aivideo:studio:generate", "aivideo:studio:query");
     private static final Set<String> NEW_PERMISSIONS = Set.of(
         "aivideo:studio:generate", "aivideo:studio:query", "aivideo:voice:query",
         "aivideo:portrait:query", "aivideo:creation:edit", "aivideo:creation:generate",
         "aivideo:task:query", "aivideo:creation-asset:query");
+    private static final Set<String> VOICE_JOB_PERMISSIONS = Set.of(
+        "aivideo:studio:generate", "aivideo:studio:query", "aivideo:portrait:query",
+        "aivideo:creation:edit", "aivideo:creation:generate", "aivideo:task:query",
+        "aivideo:creation-asset:query");
+    private static final Set<String> VIDEO_JOB_PERMISSIONS = Set.of(
+        "aivideo:studio:generate", "aivideo:studio:query", "aivideo:creation:edit",
+        "aivideo:creation:generate", "aivideo:task:query", "aivideo:creation-asset:query");
+    private static final Set<String> PROJECT_PERMISSIONS = Set.of(
+        "aivideo:studio:generate", "aivideo:studio:query", "aivideo:creation:generate",
+        "aivideo:task:query", "aivideo:creation-asset:query");
+    private static final Set<String> RENDER_TASK_PERMISSIONS = Set.of(
+        "aivideo:studio:generate", "aivideo:studio:query", "aivideo:task:query",
+        "aivideo:creation-asset:query");
 
     private final IAgentRunService runService;
     private final IAgentRunOrchestrationService orchestrationService;
     private final IAgentRunTraceService traceService;
+    private final IDigitalHumanGenerationService generationService;
     private final JsonMapper jsonMapper;
 
     public AgentRunApplicationServiceImpl(IAgentRunService runService,
                                           IAgentRunOrchestrationService orchestrationService,
                                           IAgentRunTraceService traceService,
+                                          IDigitalHumanGenerationService generationService,
                                           JsonMapper jsonMapper) {
         this.runService = Objects.requireNonNull(runService, "runService");
         this.orchestrationService = Objects.requireNonNull(orchestrationService, "orchestrationService");
         this.traceService = Objects.requireNonNull(traceService, "traceService");
+        this.generationService = Objects.requireNonNull(generationService, "generationService");
         this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
     }
 
     @Override
     public AgentRunDetailVo create(AppPrincipalSnapshotDTO principal, CreateAgentRunBo body) {
-        requirePrincipal(principal, NEW_PERMISSIONS);
-        requireCreate(body);
+        String startAt = requireCreate(body);
+        requirePrincipal(principal, createPermissions(startAt));
         String baseKey = body.getIdempotencyKey();
 
         ObjectNode brief = jsonMapper.createObjectNode();
-        brief.put("startAt", "new");
-        brief.put("scriptText", body.getScriptText());
-        brief.put("referenceVoiceId", body.getReferenceVoiceId());
-        brief.put("portraitId", body.getPortraitId());
-        brief.put("projectTitle", body.getProjectTitle());
+        brief.put("startAt", startAt);
+        switch (startAt) {
+            case "new" -> {
+                brief.put("scriptText", body.getScriptText());
+                brief.put("referenceVoiceId", body.getReferenceVoiceId());
+                brief.put("portraitId", body.getPortraitId());
+                brief.put("projectTitle", body.getProjectTitle());
+            }
+            case "voice_job" -> {
+                DigitalHumanJobDTO job = reusableJob(principal, body.getVoiceJobId(),
+                    DigitalHumanJobType.VOICE_GENERATE);
+                brief.put("voiceJobId", body.getVoiceJobId());
+                brief.put("inputHash", job.inputHash());
+                brief.put("portraitId", body.getPortraitId());
+                brief.put("projectTitle", body.getProjectTitle());
+            }
+            case "video_job" -> {
+                DigitalHumanJobDTO job = reusableJob(principal, body.getVideoJobId(),
+                    DigitalHumanJobType.VIDEO_GENERATE);
+                brief.put("videoJobId", body.getVideoJobId());
+                brief.put("inputHash", job.inputHash());
+                brief.put("projectTitle", body.getProjectTitle());
+            }
+            case "project" -> {
+                brief.put("projectId", body.getProjectId());
+                brief.put("expectedRevision", body.getExpectedRevision());
+            }
+            case "render_task" -> brief.put("taskId", body.getTaskId());
+            default -> throw new ServiceException("Agent 交付输入无效", 46702);
+        }
         IAgentRunService.DeliveryBriefVersionView briefVersion = stableMutation(() ->
             runService.appendDeliveryBrief(principal,
                 new IAgentRunService.AppendDeliveryBriefCommand(null, null, baseKey + ".brief", json(brief))));
@@ -73,7 +123,7 @@ public class AgentRunApplicationServiceImpl implements IAgentRunApplicationServi
         ObjectNode profile = jsonMapper.createObjectNode();
         profile.put("maxRunSeconds", 3_600);
         profile.put("maxResumeAttempts", 20);
-        profile.put("maxProviderSubmissions", 2);
+        profile.put("maxProviderSubmissions", requiredProviderSubmissions(startAt));
         profile.put("maxRenderRetries", 1);
         profile.put("pollIntervalSeconds", 5);
         IAgentRunService.AcceptanceProfileVersionView profileVersion = stableMutation(() ->
@@ -95,10 +145,11 @@ public class AgentRunApplicationServiceImpl implements IAgentRunApplicationServi
     @Override
     public AgentRunDetailVo advance(AppPrincipalSnapshotDTO principal, String agentRunId,
                                     AgentRunRevisionBo body) {
-        requirePrincipal(principal, NEW_PERMISSIONS);
+        requirePrincipal(principal, ADVANCE_BASE_PERMISSIONS);
         long runId = positiveId(agentRunId, "AgentRun 不存在");
-        requireOwnedRun(principal, runId);
         requireRevision(body);
+        IAgentRunService.ExecutionSnapshot snapshot = requireOwnedSnapshot(principal, runId);
+        requirePrincipal(principal, createPermissions(frozenStartAt(snapshot.deliveryBriefJson())));
         AgentRunOrchestrationDTOs.AdvanceResult result = stableMutation(() ->
             orchestrationService.advance(principal, new AgentRunOrchestrationDTOs.AdvanceCommand(
                 runId, body.getRowVersion(), body.getContractRevision(), workerId())));
@@ -207,6 +258,33 @@ public class AgentRunApplicationServiceImpl implements IAgentRunApplicationServi
         }
     }
 
+    private IAgentRunService.ExecutionSnapshot requireOwnedSnapshot(AppPrincipalSnapshotDTO principal, long runId) {
+        try {
+            return runService.getOwnedExecutionSnapshot(principal, runId);
+        } catch (ServiceException exception) {
+            if (exception.getCode() != null) {
+                throw exception;
+            }
+            throw new ServiceException("AgentRun 不存在", 46704);
+        }
+    }
+
+    private String frozenStartAt(String briefJson) {
+        try {
+            JsonNode brief = jsonMapper.readTree(briefJson);
+            String startAt = brief != null && brief.isObject() && brief.get("startAt") != null
+                && brief.get("startAt").isTextual() ? brief.get("startAt").textValue() : null;
+            if (createPermissions(startAt).isEmpty()) {
+                throw new ServiceException("Agent 冻结合同无效", 46705);
+            }
+            return startAt;
+        } catch (ServiceException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new ServiceException("Agent 冻结合同无效", 46705);
+        }
+    }
+
     private <T> T stableMutation(Supplier<T> operation) {
         try {
             return operation.get();
@@ -218,14 +296,90 @@ public class AgentRunApplicationServiceImpl implements IAgentRunApplicationServi
         }
     }
 
-    private void requireCreate(CreateAgentRunBo body) {
-        if (body == null || !"new".equals(body.getStartAt()) || blank(body.getScriptText())
-            || body.getScriptText().codePointCount(0, body.getScriptText().length()) > 1_000
-            || positiveIdOrZero(body.getReferenceVoiceId()) == 0 || positiveIdOrZero(body.getPortraitId()) == 0
-            || blank(body.getProjectTitle()) || body.getProjectTitle().codePointCount(0, body.getProjectTitle().length()) > 128
-            || body.getIdempotencyKey() == null || !CLIENT_KEY.matcher(body.getIdempotencyKey()).matches()) {
+    private String requireCreate(CreateAgentRunBo body) {
+        String startAt = body == null ? null : body.getStartAt();
+        boolean validCommon = body != null && body.getIdempotencyKey() != null
+            && CLIENT_KEY.matcher(body.getIdempotencyKey()).matches();
+        boolean validShape = switch (startAt == null ? "" : startAt) {
+            case "new" -> text(body.getScriptText(), 1_000)
+                && positiveIdOrZero(body.getReferenceVoiceId()) > 0
+                && positiveIdOrZero(body.getPortraitId()) > 0 && text(body.getProjectTitle(), 128)
+                && absent(body.getVoiceJobId(), body.getVideoJobId(), body.getProjectId(),
+                    body.getExpectedRevision(), body.getTaskId());
+            case "voice_job" -> positiveIdOrZero(body.getVoiceJobId()) > 0
+                && positiveIdOrZero(body.getPortraitId()) > 0 && text(body.getProjectTitle(), 128)
+                && absent(body.getScriptText(), body.getReferenceVoiceId(), body.getVideoJobId(),
+                    body.getProjectId(), body.getExpectedRevision(), body.getTaskId());
+            case "video_job" -> positiveIdOrZero(body.getVideoJobId()) > 0 && text(body.getProjectTitle(), 128)
+                && absent(body.getScriptText(), body.getReferenceVoiceId(), body.getPortraitId(),
+                    body.getVoiceJobId(), body.getProjectId(), body.getExpectedRevision(), body.getTaskId());
+            case "project" -> positiveIdOrZero(body.getProjectId()) > 0
+                && positiveIdOrZero(body.getExpectedRevision()) > 0
+                && absent(body.getScriptText(), body.getReferenceVoiceId(), body.getPortraitId(),
+                    body.getProjectTitle(), body.getVoiceJobId(), body.getVideoJobId(), body.getTaskId());
+            case "render_task" -> positiveIdOrZero(body.getTaskId()) > 0
+                && absent(body.getScriptText(), body.getReferenceVoiceId(), body.getPortraitId(),
+                    body.getProjectTitle(), body.getVoiceJobId(), body.getVideoJobId(), body.getProjectId(),
+                    body.getExpectedRevision());
+            default -> false;
+        };
+        if (!validCommon || !validShape) {
             throw new ServiceException("Agent 交付输入无效", 46702);
         }
+        return startAt;
+    }
+
+    private DigitalHumanJobDTO reusableJob(AppPrincipalSnapshotDTO principal, String jobId,
+                                            DigitalHumanJobType expectedType) {
+        DigitalHumanJobDTO job;
+        try {
+            job = generationService.getStoredJob(positiveIdOrZero(jobId), new DigitalHumanOwnerDTO(
+                principal.workspace().tenantId(), principal.appUserId()));
+        } catch (ServiceException exception) {
+            throw new ServiceException("可复用任务不存在或状态无效", 46704);
+        }
+        if (job == null) {
+            throw new ServiceException("可复用任务不存在或状态无效", 46704);
+        }
+        boolean validVoice = expectedType != DigitalHumanJobType.VOICE_GENERATE
+            || job.voiceConfirmed() && job.parentJobId() == null;
+        boolean validVideo = expectedType != DigitalHumanJobType.VIDEO_GENERATE
+            || job.parentJobId() != null && job.parentJobId() > 0;
+        if (job.jobId() == null || job.jobId() != positiveIdOrZero(jobId) || job.jobType() != expectedType
+            || job.status() != DigitalHumanJobStatus.SUCCEEDED || !job.outputAvailable()
+            || job.inputHash() == null || !SHA256.matcher(job.inputHash()).matches()
+            || !validVoice || !validVideo) {
+            throw new ServiceException("可复用任务不存在或状态无效", 46704);
+        }
+        return job;
+    }
+
+    private Set<String> createPermissions(String startAt) {
+        return switch (startAt == null ? "" : startAt) {
+            case "new" -> NEW_PERMISSIONS;
+            case "voice_job" -> VOICE_JOB_PERMISSIONS;
+            case "video_job" -> VIDEO_JOB_PERMISSIONS;
+            case "project" -> PROJECT_PERMISSIONS;
+            case "render_task" -> RENDER_TASK_PERMISSIONS;
+            default -> Set.of();
+        };
+    }
+
+    private int requiredProviderSubmissions(String startAt) {
+        return switch (startAt) {
+            case "new" -> 2;
+            case "voice_job" -> 1;
+            case "video_job", "project", "render_task" -> 0;
+            default -> throw new ServiceException("Agent 交付输入无效", 46702);
+        };
+    }
+
+    private boolean text(String value, int maxCodePoints) {
+        return !blank(value) && value.codePointCount(0, value.length()) <= maxCodePoints;
+    }
+
+    private boolean absent(String... values) {
+        return java.util.Arrays.stream(values).allMatch(Objects::isNull);
     }
 
     private void requireRevision(AgentRunRevisionBo body) {

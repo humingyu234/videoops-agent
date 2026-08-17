@@ -5,6 +5,11 @@ import org.dromara.aivideo.agent.dto.AgentRunTraceDTO;
 import org.dromara.aivideo.agent.service.IAgentRunOrchestrationService;
 import org.dromara.aivideo.agent.service.IAgentRunService;
 import org.dromara.aivideo.agent.service.IAgentRunTraceService;
+import org.dromara.aivideo.digitalhuman.domain.DigitalHumanJobStage;
+import org.dromara.aivideo.digitalhuman.domain.DigitalHumanJobStatus;
+import org.dromara.aivideo.digitalhuman.domain.DigitalHumanJobType;
+import org.dromara.aivideo.digitalhuman.dto.DigitalHumanJobDTO;
+import org.dromara.aivideo.digitalhuman.service.IDigitalHumanGenerationService;
 import org.dromara.aivideo.identity.dto.AppPrincipalSnapshotDTO;
 import org.dromara.aivideo.identity.dto.AppWorkspaceSessionSnapshotDTO;
 import org.dromara.aivideo.identity.security.AppAuditRequestContext;
@@ -38,10 +43,15 @@ import static org.mockito.Mockito.when;
 @Tag("dev")
 class AgentRunApplicationServiceImplTest {
 
+    private static final String INPUT_HASH = "a".repeat(64);
+
     private static final Set<String> PERMISSIONS = Set.of(
         "aivideo:studio:generate", "aivideo:studio:query", "aivideo:voice:query",
         "aivideo:portrait:query", "aivideo:creation:edit", "aivideo:creation:generate",
         "aivideo:task:query", "aivideo:creation-asset:query");
+    private static final Set<String> VIDEO_JOB_PERMISSIONS = Set.of(
+        "aivideo:studio:generate", "aivideo:studio:query", "aivideo:creation:edit",
+        "aivideo:creation:generate", "aivideo:task:query", "aivideo:creation-asset:query");
 
     @Test
     void createsOneFrozenContractWithServerOwnedPolicyAndStableKeys() {
@@ -75,6 +85,111 @@ class AgentRunApplicationServiceImplTest {
         assertThat(detail.run().runId()).isEqualTo("103");
         assertThat(detail.trace().completeness()).isEqualTo("durable_facts");
         assertThat(detail.action()).isNull();
+    }
+
+    @Test
+    void createsReuseContractsOnlyFromStoredSucceededOwnedJobsAndFreezesTheirInputHash() {
+        Fixture voiceFixture = fixture();
+        when(voiceFixture.generation.getStoredJob(eq(501L), any())).thenReturn(
+            job(501L, null, DigitalHumanJobType.VOICE_GENERATE, true, INPUT_HASH));
+        CreateAgentRunBo voice = new CreateAgentRunBo();
+        voice.setStartAt("voice_job");
+        voice.setVoiceJobId("501");
+        voice.setPortraitId("12");
+        voice.setProjectTitle("复用声音");
+        voice.setIdempotencyKey("reuse-voice");
+
+        voiceFixture.service.create(principal(PERMISSIONS), voice);
+
+        ArgumentCaptor<IAgentRunService.AppendDeliveryBriefCommand> voiceBrief =
+            ArgumentCaptor.forClass(IAgentRunService.AppendDeliveryBriefCommand.class);
+        ArgumentCaptor<IAgentRunService.AppendAcceptanceProfileCommand> voiceProfile =
+            ArgumentCaptor.forClass(IAgentRunService.AppendAcceptanceProfileCommand.class);
+        verify(voiceFixture.runs).appendDeliveryBrief(any(), voiceBrief.capture());
+        verify(voiceFixture.runs).appendAcceptanceProfile(any(), voiceProfile.capture());
+        assertThat(voiceBrief.getValue().briefJson()).contains(
+            "\"startAt\":\"voice_job\"", "\"voiceJobId\":\"501\"",
+            "\"inputHash\":\"" + INPUT_HASH + "\"", "\"portraitId\":\"12\"")
+            .doesNotContain("scriptText", "referenceVoiceId", "owner");
+        assertThat(voiceProfile.getValue().profileJson()).contains("\"maxProviderSubmissions\":1");
+
+        Fixture videoFixture = fixture();
+        when(videoFixture.generation.getStoredJob(eq(601L), any())).thenReturn(
+            job(601L, 501L, DigitalHumanJobType.VIDEO_GENERATE, false, INPUT_HASH));
+        CreateAgentRunBo video = new CreateAgentRunBo();
+        video.setStartAt("video_job");
+        video.setVideoJobId("601");
+        video.setProjectTitle("复用视频");
+        video.setIdempotencyKey("reuse-video");
+
+        videoFixture.service.create(principal(PERMISSIONS), video);
+
+        ArgumentCaptor<IAgentRunService.AppendDeliveryBriefCommand> videoBrief =
+            ArgumentCaptor.forClass(IAgentRunService.AppendDeliveryBriefCommand.class);
+        ArgumentCaptor<IAgentRunService.AppendAcceptanceProfileCommand> videoProfile =
+            ArgumentCaptor.forClass(IAgentRunService.AppendAcceptanceProfileCommand.class);
+        verify(videoFixture.runs).appendDeliveryBrief(any(), videoBrief.capture());
+        verify(videoFixture.runs).appendAcceptanceProfile(any(), videoProfile.capture());
+        assertThat(videoBrief.getValue().briefJson()).contains(
+            "\"startAt\":\"video_job\"", "\"videoJobId\":\"601\"",
+            "\"inputHash\":\"" + INPUT_HASH + "\"")
+            .doesNotContain("portraitId", "voiceJobId", "owner");
+        assertThat(videoProfile.getValue().profileJson()).contains("\"maxProviderSubmissions\":0");
+    }
+
+    @Test
+    void rejectsWrongTypeNonSucceededOrDigestlessReuseBeforeContractWrites() {
+        Fixture fixture = fixture();
+        CreateAgentRunBo body = new CreateAgentRunBo();
+        body.setStartAt("video_job");
+        body.setVideoJobId("601");
+        body.setProjectTitle("复用视频");
+        body.setIdempotencyKey("reuse-video");
+        when(fixture.generation.getStoredJob(eq(601L), any())).thenReturn(
+            job(601L, null, DigitalHumanJobType.VOICE_GENERATE, true, INPUT_HASH),
+            new DigitalHumanJobDTO(601L, 501L, DigitalHumanJobType.VIDEO_GENERATE,
+                DigitalHumanJobStatus.RUNNING, DigitalHumanJobStage.VIDEO_RENDERING, 50,
+                true, false, null, null, INPUT_HASH),
+            job(601L, 501L, DigitalHumanJobType.VIDEO_GENERATE, false, null));
+
+        for (int attempt = 0; attempt < 3; attempt++) {
+            assertThatThrownBy(() -> fixture.service.create(principal(PERMISSIONS), body))
+                .isInstanceOf(ServiceException.class)
+                .hasMessage("可复用任务不存在或状态无效")
+                .extracting(error -> ((ServiceException) error).getCode()).isEqualTo(46704);
+        }
+
+        verify(fixture.runs, never()).appendDeliveryBrief(any(), any());
+        verifyNoInteractions(fixture.orchestration, fixture.trace);
+    }
+
+    @Test
+    void acceptsProjectAndRenderShapesButRejectsConflictingKnownFieldsBeforeWrites() {
+        Fixture projectFixture = fixture();
+        CreateAgentRunBo project = new CreateAgentRunBo();
+        project.setStartAt("project");
+        project.setProjectId("701");
+        project.setExpectedRevision("3");
+        project.setIdempotencyKey("reuse-project");
+        projectFixture.service.create(principal(PERMISSIONS), project);
+        ArgumentCaptor<IAgentRunService.AppendDeliveryBriefCommand> projectBrief =
+            ArgumentCaptor.forClass(IAgentRunService.AppendDeliveryBriefCommand.class);
+        verify(projectFixture.runs).appendDeliveryBrief(any(), projectBrief.capture());
+        assertThat(projectBrief.getValue().briefJson()).isEqualTo(
+            "{\"startAt\":\"project\",\"projectId\":\"701\",\"expectedRevision\":\"3\"}");
+        verifyNoInteractions(projectFixture.generation);
+
+        Fixture invalidFixture = fixture();
+        CreateAgentRunBo invalid = new CreateAgentRunBo();
+        invalid.setStartAt("render_task");
+        invalid.setTaskId("801");
+        invalid.setProjectTitle("不允许的已知额外字段");
+        invalid.setIdempotencyKey("reuse-render");
+        assertThatThrownBy(() -> invalidFixture.service.create(principal(PERMISSIONS), invalid))
+            .isInstanceOf(ServiceException.class)
+            .extracting(error -> ((ServiceException) error).getCode()).isEqualTo(46702);
+        verifyNoInteractions(invalidFixture.runs, invalidFixture.orchestration,
+            invalidFixture.trace, invalidFixture.generation);
     }
 
     @Test
@@ -123,7 +238,7 @@ class AgentRunApplicationServiceImplTest {
         ArgumentCaptor<AgentRunOrchestrationDTOs.AdvanceCommand> command =
             ArgumentCaptor.forClass(AgentRunOrchestrationDTOs.AdvanceCommand.class);
         var order = inOrder(fixture.runs, fixture.orchestration);
-        order.verify(fixture.runs).getOwnedRun(any(), eq(103L));
+        order.verify(fixture.runs).getOwnedExecutionSnapshot(any(), eq(103L));
         order.verify(fixture.orchestration).advance(any(), any());
         verify(fixture.orchestration).advance(any(), command.capture());
         assertThat(command.getValue().agentRunId()).isEqualTo(103L);
@@ -133,9 +248,28 @@ class AgentRunApplicationServiceImplTest {
     }
 
     @Test
+    void advancesAReuseRunWithItsFrozenStartPermissionsInsteadOfNewOnlyPermissions() {
+        Fixture fixture = fixture();
+        when(fixture.runs.getOwnedExecutionSnapshot(any(), eq(103L))).thenReturn(snapshot(
+            "{\"startAt\":\"video_job\",\"videoJobId\":\"601\",\"inputHash\":\"" + INPUT_HASH
+                + "\",\"projectTitle\":\"复用视频\"}"));
+        when(fixture.orchestration.advance(any(), any())).thenReturn(new AgentRunOrchestrationDTOs.AdvanceResult(
+            103L, "queued", "advanced", null, null, null, List.of(), null, null));
+
+        try (var ignored = AppAuditRequestContextHolder.bindTrusted(
+            new AppAuditRequestContext("0123456789abcdef0123456789abcdef", "127.0.0.1"))) {
+            fixture.service.advance(principal(VIDEO_JOB_PERMISSIONS), "103", revision());
+        }
+
+        verify(fixture.orchestration).advance(any(), any());
+    }
+
+    @Test
     void mapsCrossOwnerBeforeEveryMutationAndDetailToStableNotFound() {
         Fixture fixture = fixture();
         when(fixture.runs.getOwnedRun(any(), eq(103L))).thenThrow(new ServiceException("AgentRun 不存在"));
+        when(fixture.runs.getOwnedExecutionSnapshot(any(), eq(103L)))
+            .thenThrow(new ServiceException("AgentRun 不存在"));
 
         assertNotFound(() -> fixture.service.detail(principal(PERMISSIONS), "103"));
         assertNotFound(() -> fixture.service.advance(principal(PERMISSIONS), "103", revision()));
@@ -143,7 +277,8 @@ class AgentRunApplicationServiceImplTest {
         assertNotFound(() -> fixture.service.decideApproval(
             principal(PERMISSIONS), "103", "201", decision()));
 
-        verify(fixture.runs, times(4)).getOwnedRun(any(), eq(103L));
+        verify(fixture.runs, times(3)).getOwnedRun(any(), eq(103L));
+        verify(fixture.runs).getOwnedExecutionSnapshot(any(), eq(103L));
         verifyNoInteractions(fixture.orchestration, fixture.trace);
     }
 
@@ -182,6 +317,7 @@ class AgentRunApplicationServiceImplTest {
         IAgentRunService runs = mock(IAgentRunService.class);
         IAgentRunOrchestrationService orchestration = mock(IAgentRunOrchestrationService.class);
         IAgentRunTraceService trace = mock(IAgentRunTraceService.class);
+        IDigitalHumanGenerationService generation = mock(IDigitalHumanGenerationService.class);
         when(runs.appendDeliveryBrief(any(), any())).thenReturn(
             new IAgentRunService.DeliveryBriefVersionView(101L, 201L, 1L, null,
                 "delivery-brief-1", "image_to_digital_human_video", "brief-hash"));
@@ -190,13 +326,15 @@ class AgentRunApplicationServiceImplTest {
                 "acceptance-profile-1", "acceptance-policy-1", "profile-hash"));
         when(runs.createRun(any(), any())).thenReturn(run());
         when(runs.getOwnedRun(any(), anyLong())).thenReturn(run());
+        when(runs.getOwnedExecutionSnapshot(any(), anyLong())).thenReturn(snapshot("{\"startAt\":\"new\"}"));
         when(orchestration.plan(any(), anyLong())).thenReturn(plan());
         when(trace.getOwnedTrace(any(), anyLong())).thenReturn(new AgentRunTraceDTO(
             103L, "durable_facts", "queued", 1L, 0L, List.of(
             new AgentRunTraceDTO.Fact(1, "agent_run", 103L, "agent_run", null, "queued",
                 null, null, null, null, null, null, null, Instant.EPOCH))));
-        return new Fixture(runs, orchestration, trace,
-            new AgentRunApplicationServiceImpl(runs, orchestration, trace, JsonMapper.builder().build()));
+        return new Fixture(runs, orchestration, trace, generation,
+            new AgentRunApplicationServiceImpl(runs, orchestration, trace, generation,
+                JsonMapper.builder().build()));
     }
 
     private CreateAgentRunBo createBody() {
@@ -233,10 +371,20 @@ class AgentRunApplicationServiceImplTest {
             null, null, null, null, null);
     }
 
+    private IAgentRunService.ExecutionSnapshot snapshot(String briefJson) {
+        return new IAgentRunService.ExecutionSnapshot(run(), briefJson, "brief-hash", "{}", "profile-hash");
+    }
+
     private AgentRunOrchestrationDTOs.PlanResult plan() {
         return new AgentRunOrchestrationDTOs.PlanResult(103L, "new", List.of(
             new AgentRunOrchestrationDTOs.PlanStep(1, "submit_voice", "submit_voice_generation",
                 "required", null)), List.of(), List.copyOf(PERMISSIONS), 2, true);
+    }
+
+    private DigitalHumanJobDTO job(long jobId, Long parentJobId, DigitalHumanJobType type,
+                                   boolean confirmed, String inputHash) {
+        return new DigitalHumanJobDTO(jobId, parentJobId, type, DigitalHumanJobStatus.SUCCEEDED,
+            DigitalHumanJobStage.COMPLETED, 100, confirmed, true, null, null, inputHash);
     }
 
     private AppPrincipalSnapshotDTO principal(Set<String> permissions) {
@@ -270,6 +418,7 @@ class AgentRunApplicationServiceImplTest {
         IAgentRunService runs,
         IAgentRunOrchestrationService orchestration,
         IAgentRunTraceService trace,
+        IDigitalHumanGenerationService generation,
         AgentRunApplicationServiceImpl service
     ) {
     }

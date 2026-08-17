@@ -90,7 +90,7 @@ export interface AgentRunDetail {
   action: AgentActionResult | null;
 }
 
-export interface CreateAgentRunInput {
+export interface CreateNewAgentRunInput {
   startAt: 'new';
   scriptText: string;
   referenceVoiceId: string;
@@ -98,6 +98,41 @@ export interface CreateAgentRunInput {
   projectTitle: string;
   idempotencyKey: string;
 }
+
+export interface CreateVoiceJobAgentRunInput {
+  startAt: 'voice_job';
+  voiceJobId: string;
+  portraitId: string;
+  projectTitle: string;
+  idempotencyKey: string;
+}
+
+export interface CreateVideoJobAgentRunInput {
+  startAt: 'video_job';
+  videoJobId: string;
+  projectTitle: string;
+  idempotencyKey: string;
+}
+
+export interface CreateProjectAgentRunInput {
+  startAt: 'project';
+  projectId: string;
+  expectedRevision: string;
+  idempotencyKey: string;
+}
+
+export interface CreateRenderTaskAgentRunInput {
+  startAt: 'render_task';
+  taskId: string;
+  idempotencyKey: string;
+}
+
+export type CreateAgentRunInput =
+  | CreateNewAgentRunInput
+  | CreateVoiceJobAgentRunInput
+  | CreateVideoJobAgentRunInput
+  | CreateProjectAgentRunInput
+  | CreateRenderTaskAgentRunInput;
 
 export interface AgentRunRevisionInput {
   rowVersion: number;

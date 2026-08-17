@@ -66,6 +66,7 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
         INITIAL_APPROVAL, CONDITIONAL_APPROVAL, FINAL_APPROVAL);
 
     private static final Pattern POSITIVE_ID = Pattern.compile("[1-9][0-9]{0,18}");
+    private static final Pattern SHA256 = Pattern.compile("[a-f0-9]{64}");
     private static final Pattern WORKER_ID = Pattern.compile("[A-Za-z0-9._:-]{1,128}");
 
     private static final int MIN_RUN_SECONDS = 1;
@@ -284,20 +285,14 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
             case VOICE_JOB -> {
                 AgentToolDTOs.GenerationJobResult voice = generation(call(principal, GET_GENERATION,
                     object("jobId", input.voiceJobId())));
-                requireGeneration(voice, VOICE_GENERATE, input.voiceJobId());
-                if (failedGeneration(voice)) {
-                    throw generationFailure(voice);
-                }
+                requireReusableGeneration(voice, VOICE_GENERATE, input.voiceJobId(), input.inputHash());
                 yield parkInitial(principal, lease, DIGITAL_HUMAN_TASK, positiveLong(voice.jobId()),
                     contract.policy());
             }
             case VIDEO_JOB -> {
                 AgentToolDTOs.GenerationJobResult video = generation(call(principal, GET_GENERATION,
                     object("jobId", input.videoJobId())));
-                requireGeneration(video, VIDEO_GENERATE, input.videoJobId());
-                if (failedGeneration(video)) {
-                    throw generationFailure(video);
-                }
+                requireReusableGeneration(video, VIDEO_GENERATE, input.videoJobId(), input.inputHash());
                 yield parkInitial(principal, lease, DIGITAL_HUMAN_TASK, positiveLong(video.jobId()),
                     contract.policy());
             }
@@ -313,9 +308,10 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
                 AgentToolDTOs.RenderStatusResult render = renderStatus(call(principal, GET_RENDER,
                     object("taskId", input.taskId())));
                 requireRenderStatus(render, input.taskId());
-                if (failedRender(render) || cancelledRender(render)) {
-                    throw renderFailure(render);
+                if (!"success".equals(render.status()) || render.resultAssetId() == null) {
+                    throw invalidResult();
                 }
+                positiveLong(render.resultAssetId());
                 yield parkInitial(principal, lease, AI_TASK, positiveLong(render.taskId()), contract.policy());
             }
         };
@@ -606,8 +602,8 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
         }
         Set<String> expected = switch (startAt) {
             case NEW -> Set.of("startAt", "scriptText", "referenceVoiceId", "portraitId", "projectTitle");
-            case VOICE_JOB -> Set.of("startAt", "voiceJobId", "portraitId", "projectTitle");
-            case VIDEO_JOB -> Set.of("startAt", "videoJobId", "projectTitle");
+            case VOICE_JOB -> Set.of("startAt", "voiceJobId", "inputHash", "portraitId", "projectTitle");
+            case VIDEO_JOB -> Set.of("startAt", "videoJobId", "inputHash", "projectTitle");
             case PROJECT -> Set.of("startAt", "projectId", "expectedRevision");
             case RENDER_TASK -> Set.of("startAt", "taskId");
         };
@@ -619,6 +615,7 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
         String projectTitle = null;
         String voiceJobId = null;
         String videoJobId = null;
+        String inputHash = null;
         String projectId = null;
         String expectedRevision = null;
         String taskId = null;
@@ -631,11 +628,13 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
             }
             case VOICE_JOB -> {
                 voiceJobId = positiveId(node, "voiceJobId", "brief.voiceJobId", issues);
+                inputHash = sha256(node, "inputHash", "brief.inputHash", issues);
                 portraitId = positiveId(node, "portraitId", "brief.portraitId", issues);
                 projectTitle = textual(node, "projectTitle", 128, "brief.projectTitle", issues);
             }
             case VIDEO_JOB -> {
                 videoJobId = positiveId(node, "videoJobId", "brief.videoJobId", issues);
+                inputHash = sha256(node, "inputHash", "brief.inputHash", issues);
                 projectTitle = textual(node, "projectTitle", 128, "brief.projectTitle", issues);
             }
             case PROJECT -> {
@@ -645,7 +644,7 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
             case RENDER_TASK -> taskId = positiveId(node, "taskId", "brief.taskId", issues);
         }
         return new GoldenInput(startAt, scriptText, referenceVoiceId, portraitId, projectTitle, voiceJobId,
-            videoJobId, projectId, expectedRevision, taskId);
+            videoJobId, inputHash, projectId, expectedRevision, taskId);
     }
 
     private ExecutionPolicy parseProfile(String json, List<String> issues) {
@@ -728,6 +727,15 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
             addMissing(issues, issue);
             return null;
         }
+    }
+
+    private String sha256(JsonNode node, String field, String issue, List<String> issues) {
+        String value = textual(node, field, 64, issue, issues);
+        if (value == null || !SHA256.matcher(value).matches()) {
+            addMissing(issues, issue);
+            return null;
+        }
+        return value;
     }
 
     private Integer integer(JsonNode node, String field, int minimum, int maximum, List<String> issues) {
@@ -832,6 +840,17 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
             throw invalidResult();
         }
         positiveLong(job.jobId());
+    }
+
+    private void requireReusableGeneration(AgentToolDTOs.GenerationJobResult job, String expectedType,
+                                           String expectedJobId, String expectedInputHash) {
+        requireGeneration(job, expectedType, expectedJobId);
+        boolean validVoice = !VOICE_GENERATE.equals(expectedType) || job.voiceConfirmed();
+        boolean validVideo = !VIDEO_GENERATE.equals(expectedType) || positiveLongOrZero(job.parentJobId()) > 0;
+        if (!succeededGeneration(job) || !job.outputAvailable() || !validVoice || !validVideo
+            || expectedInputHash == null || !expectedInputHash.equals(job.inputHash())) {
+            throw invalidResult();
+        }
     }
 
     private void requireProject(AgentToolDTOs.ProjectResult project) {
@@ -1146,6 +1165,14 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
         }
     }
 
+    private long positiveLongOrZero(String value) {
+        try {
+            return value != null && POSITIVE_ID.matcher(value).matches() ? Long.parseLong(value) : 0;
+        } catch (NumberFormatException exception) {
+            return 0;
+        }
+    }
+
     private boolean expected(IAgentRunService.AgentRunView run, long rowVersion, long contractRevision) {
         return run.rowVersion() == rowVersion && run.contractRevision() == contractRevision;
     }
@@ -1236,6 +1263,7 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
         String projectTitle,
         String voiceJobId,
         String videoJobId,
+        String inputHash,
         String projectId,
         String expectedRevision,
         String taskId

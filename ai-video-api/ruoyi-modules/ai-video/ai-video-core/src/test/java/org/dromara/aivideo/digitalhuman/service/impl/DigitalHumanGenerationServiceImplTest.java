@@ -330,6 +330,27 @@ class DigitalHumanGenerationServiceImplTest {
     }
 
     @Test
+    void readsStoredReuseFactWithoutTimeoutMutationOrProviderPolling() {
+        DigitalHumanGenerationJobMapper mapper = mock(DigitalHumanGenerationJobMapper.class);
+        IDigitalHumanVideoService videoService = mock(IDigitalHumanVideoService.class);
+        DigitalHumanGenerationJob video = videoJob(511L);
+        video.setInputHash("a".repeat(64));
+        video.setCreateTime(LocalDateTime.now().minusMinutes(30));
+        when(mapper.selectOwnedById(511L, 2001L, 1001L)).thenReturn(video);
+        DigitalHumanGenerationServiceImpl service = new DigitalHumanGenerationServiceImpl(
+            mapper, mock(IVoiceSynthesisService.class), videoService,
+            mock(IDigitalHumanMediaStorageService.class), SAME_THREAD, () -> 999L);
+
+        DigitalHumanJobDTO result = service.getStoredJob(511L, OWNER);
+
+        assertThat(result.jobId()).isEqualTo(511L);
+        assertThat(result.status()).isEqualTo(DigitalHumanJobStatus.RUNNING);
+        assertThat(result.inputHash()).isEqualTo("a".repeat(64));
+        verify(mapper, never()).update(isNull(), any());
+        verifyNoInteractions(videoService);
+    }
+
+    @Test
     void replaysConcurrentVoiceRequestAfterUniqueConstraintWinnerWithoutDispatchingLoser() {
         DigitalHumanGenerationJobMapper mapper = mock(DigitalHumanGenerationJobMapper.class);
         IDigitalHumanMediaStorageService storage = mock(IDigitalHumanMediaStorageService.class);
