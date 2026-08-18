@@ -4,7 +4,7 @@
 
 **让数字人口播视频从“七步人工操作”变成一条可执行、可恢复、可质检、可追踪的 Agent 交付链。**
 
-[▶ 播放完整演示视频](https://humingyu234.github.io/videoops-agent/) · [查看源码](https://github.com/humingyu234/videoops-agent)
+[▶ 完整 Agent 演示](https://humingyu234.github.io/videoops-agent/) · [▶ 真实成品样片](https://humingyu234.github.io/videoops-agent/VideoOps-Agent-digital-human-demo.mp4) · [查看源码](https://github.com/humingyu234/videoops-agent)
 
 </div>
 
@@ -40,19 +40,21 @@ VideoOps Agent 面向品牌、电商和内容运营团队。用户只需要给�
 | 批准与权限 | 关键节点由素材所有者确认 | owner-scoped、revision/digest fail-closed、跨用户零副作用 |
 | 交付与追踪 | 下载最终成片，回放完整过程 | owned ready asset + 持久化 AgentRun Trace |
 
-## 演示视频
+## 完整演示与真实成品
 
 ### [播放 VideoOps Agent 完整演示 →](https://humingyu234.github.io/videoops-agent/)
 
-这条演示从业务价值切入，展示真实 `/agent` 运行界面、9 步受限执行、Provider 零重提、一次时间轴与渲染局部返工、质量复检和最终批准，并完整播放真实数字人成品。
+[直接播放昨天生成的真实数字人成品 →](https://humingyu234.github.io/videoops-agent/VideoOps-Agent-digital-human-demo.mp4)
 
-| 演示指标 | 实测结果 |
+完整演示从业务价值切入，展示真实 `/agent` 运行界面、9 步受限执行、Provider 零重提、一次时间轴与渲染局部返工、质量复检和最终批准；真实成品样片则保留原始竖屏数字人口播效果。
+
+| 公开资产 | 实测结果 |
 | --- | --- |
-| 时长 / 画幅 / 帧率 | 72.49 秒 / 1920 × 1080 / 30 fps |
-| 编码 | H.264 视频 + AAC 音频 |
-| 文件大小 | 7,692,253 bytes |
-| SHA-256 | `3E94F3C59B1C8D0D3437A40F5F3DE0D0F7F4C13C375F602DCE08B735604608C1` |
-| 媒体验证 | ffprobe、完整视频解码和 AAC 音轨验证通过 |
+| 完整 Agent 演示 | 72.49 秒 / 1920 × 1080 / 30 fps / H.264 + AAC / 7,692,253 bytes |
+| 真实数字人成品 | 25.8 秒 / 1080 × 1920 / 30 fps / H.264 + AAC / 5,244,591 bytes |
+| 完整演示 SHA-256 | `3E94F3C59B1C8D0D3437A40F5F3DE0D0F7F4C13C375F602DCE08B735604608C1` |
+| 真实成品 SHA-256 | `70AF66B5D57A43B3626DF1FE3C1CC85417010EC600C04050F3A93BA77FFEE0B7` |
+| 媒体验证 | 两条视频均经 ffprobe、完整视频解码和 AAC 音轨验证 |
 
 演示中的运行截图、Trace、返工结果与最终资产来自同一条已完成 AgentRun；画中画标注用于帮助观众快速理解证据，不替代真实界面事实。
 
