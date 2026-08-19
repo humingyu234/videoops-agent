@@ -133,6 +133,14 @@ describe('VoiceStep', () => {
       'src',
       'blob:voice-preview',
     );
+    const preview = screen.getByLabelText('克隆声音试听');
+    expect(preview).toHaveAttribute('preload', 'metadata');
+    fireEvent.loadedMetadata(preview);
+    expect(screen.queryByText('正在加载声音时长…')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '下载声音试听' })).toHaveAttribute(
+      'href',
+      'blob:voice-preview',
+    );
     fireEvent.click(
       screen.getByRole('button', { name: /确认声音，去生成底片/ }),
     );
@@ -357,6 +365,73 @@ describe('VoiceStep', () => {
     );
     expect(apiMock.createVoiceJob).not.toHaveBeenCalled();
     expect(apiMock.confirmVoiceJob).not.toHaveBeenCalled();
+  });
+
+  it('shows a download fallback when media metadata stays unavailable', async () => {
+    vi.useFakeTimers();
+
+    render(
+      <VoiceStep
+        state={{ ...initialStudioState, voiceJob: succeededVoiceJob }}
+        update={vi.fn()}
+        onFinish={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+        onToast={vi.fn()}
+      />,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByLabelText('克隆声音试听')).toHaveAttribute(
+      'src',
+      'blob:voice-preview',
+    );
+    expect(screen.getByText('正在加载声音时长…')).toBeVisible();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+
+    expect(
+      screen.getByText(
+        '浏览器未能读取声音时长，请下载试听或重新读取声音文件。',
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole('link', { name: '下载声音试听' })).toHaveAttribute(
+      'download',
+      'voice-voice-job-ui.wav',
+    );
+    expect(
+      screen.getByRole('button', { name: '重新读取声音文件' }),
+    ).toBeVisible();
+    expect(apiMock.createVoiceJob).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty voice file instead of showing a false-success player', async () => {
+    apiMock.getJobMedia.mockResolvedValueOnce(
+      new Blob([], { type: 'audio/wav' }),
+    );
+
+    render(
+      <VoiceStep
+        state={{ ...initialStudioState, voiceJob: succeededVoiceJob }}
+        update={vi.fn()}
+        onFinish={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+        onToast={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText('声音文件为空，请重新读取。')).toBeVisible();
+    expect(screen.queryByLabelText('克隆声音试听')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /确认声音，去生成底片/ }),
+    ).toBeDisabled();
+    expect(apiMock.createVoiceJob).not.toHaveBeenCalled();
   });
 
   it('persists an idempotency key across remounts and rotates it after the script changes', async () => {

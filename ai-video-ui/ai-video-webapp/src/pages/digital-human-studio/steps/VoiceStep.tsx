@@ -28,6 +28,8 @@ interface VoiceStepProps {
   onToast: (message: string) => void;
 }
 
+const VOICE_MEDIA_METADATA_TIMEOUT_MS = 8_000;
+
 const VoiceStep: React.FC<VoiceStepProps> = ({
   state,
   update,
@@ -45,6 +47,8 @@ const VoiceStep: React.FC<VoiceStepProps> = ({
   const [pollingRun, setPollingRun] = useState(0);
   const [mediaUrl, setMediaUrl] = useState<string>();
   const [mediaError, setMediaError] = useState<string>();
+  const [mediaReady, setMediaReady] = useState(false);
+  const [mediaPlaybackError, setMediaPlaybackError] = useState<string>();
   const [mediaRun, setMediaRun] = useState(0);
   const mountedRef = useRef(true);
   const createGenerationRef = useRef(0);
@@ -168,6 +172,8 @@ const VoiceStep: React.FC<VoiceStepProps> = ({
   useEffect(() => {
     setMediaUrl(undefined);
     setMediaError(undefined);
+    setMediaReady(false);
+    setMediaPlaybackError(undefined);
     if (!outputJobId) return;
     const controller = new AbortController();
     let objectUrl: string | undefined;
@@ -176,6 +182,9 @@ const VoiceStep: React.FC<VoiceStepProps> = ({
       .getJobMedia(outputJobId, controller.signal)
       .then((media) => {
         if (!active) return;
+        if (media.size === 0) {
+          throw new Error('声音文件为空，请重新读取。');
+        }
         objectUrl = URL.createObjectURL(media);
         setMediaError(undefined);
         setMediaUrl(objectUrl);
@@ -195,6 +204,16 @@ const VoiceStep: React.FC<VoiceStepProps> = ({
     };
   }, [mediaRun, outputJobId]);
 
+  useEffect(() => {
+    if (!mediaUrl || mediaReady || mediaPlaybackError) return;
+    const timer = window.setTimeout(() => {
+      setMediaPlaybackError(
+        '浏览器未能读取声音时长，请下载试听或重新读取声音文件。',
+      );
+    }, VOICE_MEDIA_METADATA_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [mediaPlaybackError, mediaReady, mediaUrl]);
+
   const retryPolling = () => {
     setActionError(undefined);
     setPollingPauseMessage(undefined);
@@ -203,7 +222,21 @@ const VoiceStep: React.FC<VoiceStepProps> = ({
 
   const retryMedia = () => {
     setMediaError(undefined);
+    setMediaReady(false);
+    setMediaPlaybackError(undefined);
     setMediaRun((current) => current + 1);
+  };
+
+  const markMediaReady = () => {
+    setMediaReady(true);
+    setMediaPlaybackError(undefined);
+  };
+
+  const markMediaPlaybackFailed = () => {
+    setMediaReady(false);
+    setMediaPlaybackError(
+      '浏览器无法播放这个声音文件，请下载试听或重新读取声音文件。',
+    );
   };
 
   const createVoiceJob = async () => {
@@ -399,7 +432,43 @@ const VoiceStep: React.FC<VoiceStepProps> = ({
               {mediaUrl ? (
                 <>
                   {/* biome-ignore lint/a11y/useMediaCaption: 生成式声音预览暂时没有可用字幕轨。 */}
-                  <audio aria-label="克隆声音试听" controls src={mediaUrl} />
+                  <audio
+                    aria-label="克隆声音试听"
+                    controls
+                    preload="metadata"
+                    src={mediaUrl}
+                    onCanPlay={markMediaReady}
+                    onError={markMediaPlaybackFailed}
+                    onLoadedMetadata={markMediaReady}
+                  />
+                  {!mediaReady && !mediaPlaybackError && (
+                    <p role="status">正在加载声音时长…</p>
+                  )}
+                  {mediaPlaybackError && (
+                    <div role="alert">
+                      <p>{mediaPlaybackError}</p>
+                    </div>
+                  )}
+                  <div className="audio-row">
+                    <a
+                      aria-label="下载声音试听"
+                      className="btn btn-outline"
+                      download={`voice-${job.jobId}.wav`}
+                      href={mediaUrl}
+                    >
+                      下载试听
+                    </a>
+                    {mediaPlaybackError && (
+                      <button
+                        aria-label="重新读取声音文件"
+                        className="btn btn-outline"
+                        type="button"
+                        onClick={retryMedia}
+                      >
+                        重新读取
+                      </button>
+                    )}
+                  </div>
                 </>
               ) : mediaError ? (
                 <div role="alert">
