@@ -95,6 +95,38 @@ function Get-OrCreateLocalRuntimeSecrets {
     return $result
 }
 
+function Import-LocalDpapiCredentialSecret {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedUserName
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $null
+    }
+
+    Protect-LocalSecretFile -Path $Path
+    try {
+        $credential = Import-Clixml -LiteralPath $Path
+    }
+    catch {
+        throw "本地 DPAPI 凭据无法读取：$Path"
+    }
+    if (($credential -isnot [System.Management.Automation.PSCredential]) -or
+        ($credential.UserName -ne $ExpectedUserName)) {
+        throw "本地 DPAPI 凭据身份无效：$Path"
+    }
+
+    $secret = $credential.GetNetworkCredential().Password
+    if ([string]::IsNullOrWhiteSpace($secret)) {
+        throw "本地 DPAPI 凭据为空：$Path"
+    }
+    return $secret
+}
+
 function Resolve-FailClosedBooleanEnvironmentVariable {
     param(
         [Parameter(Mandatory = $true)]
@@ -241,7 +273,13 @@ $runtimeMediaRoot = Join-Path $repositoryRoot '.runtime\videoops-agent\digital-h
 $runtimeTimelineWorkRoot = Join-Path $repositoryRoot '.runtime\videoops-agent\timeline-work'
 $runtimeUserApiRoot = Join-Path $repositoryRoot '.runtime\videoops-agent\user-api'
 $runtimeSecretsPath = Join-Path $repositoryRoot '.local\videoops-agent\local-runtime-secrets.json'
+$questionnaireCredentialPath = Join-Path $repositoryRoot '.local\videoops-agent\questionnaire.credentials.clixml'
+$questionnaireCredentialUserName = 'videoops-questionnaire-deepseek'
+$questionnaireSecretName = 'VIDEOOPS_USER_QUESTIONNAIRE_DEEPSEEK_API_KEY'
 $runtimeSecrets = Get-OrCreateLocalRuntimeSecrets -Names $secretNames -Path $runtimeSecretsPath
+$questionnaireSecret = Import-LocalDpapiCredentialSecret `
+    -Path $questionnaireCredentialPath `
+    -ExpectedUserName $questionnaireCredentialUserName
 New-Item -ItemType Directory -Path $runtimeUserApiRoot -Force | Out-Null
 
 $previousSecrets = @{}
@@ -254,6 +292,14 @@ Set-Item -Path "Env:$mediaRootName" -Value $runtimeMediaRoot
 Set-Item -Path "Env:$timelineWorkRootName" -Value $runtimeTimelineWorkRoot
 if ([string]::IsNullOrWhiteSpace($previousActuatorPassword)) {
     [Environment]::SetEnvironmentVariable($actuatorPasswordName, (New-LocalRuntimeSecret), 'Process')
+}
+
+$previousQuestionnaireSecret = [Environment]::GetEnvironmentVariable($questionnaireSecretName, 'Process')
+if ($null -eq $questionnaireSecret) {
+    Remove-Item -Path "Env:$questionnaireSecretName" -ErrorAction SilentlyContinue
+}
+else {
+    Set-Item -Path "Env:$questionnaireSecretName" -Value $questionnaireSecret
 }
 
 Write-Host "正在启动创作端后端：http://localhost:$Port"
@@ -286,7 +332,6 @@ try {
         "--aivideo.oss.enabled=$ossEnabled"
         '--aivideo.oss.config-key=videoops-agent-dev'
         '--aivideo.oss.prefix=videoops-agent/dev'
-        '--questionnaire.deepseek.api-key='
         '--spring.boot.admin.client.enabled=false'
         '--spring.boot.admin.client.username=local-actuator'
         '--snail-job.enabled=false'
@@ -332,6 +377,12 @@ finally {
     }
     else {
         Set-Item -Path "Env:$mediaRootName" -Value $previousMediaRoot
+    }
+    if ($null -eq $previousQuestionnaireSecret) {
+        Remove-Item -Path "Env:$questionnaireSecretName" -ErrorAction SilentlyContinue
+    }
+    else {
+        Set-Item -Path "Env:$questionnaireSecretName" -Value $previousQuestionnaireSecret
     }
     if ($null -eq $previousTimelineWorkRoot) {
         Remove-Item -Path "Env:$timelineWorkRootName" -ErrorAction SilentlyContinue

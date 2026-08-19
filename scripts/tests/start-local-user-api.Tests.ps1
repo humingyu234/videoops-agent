@@ -8,9 +8,13 @@ $timelineCaptureVariableName = 'AI_VIDEO_DH_TEST_CAPTURED_TIMELINE_WORK_ROOT'
 $argumentsCaptureVariableName = 'AI_VIDEO_DH_TEST_CAPTURED_JAVA_ARGUMENTS'
 $secretStateCaptureVariableName = 'AI_VIDEO_DH_TEST_CAPTURED_SECRET_STATE'
 $actuatorStateCaptureVariableName = 'AI_VIDEO_DH_TEST_CAPTURED_ACTUATOR_STATE'
+$questionnaireSecretStateCaptureVariableName = 'AI_VIDEO_DH_TEST_CAPTURED_QUESTIONNAIRE_SECRET_STATE'
 $workingDirectoryCaptureVariableName = 'AI_VIDEO_DH_TEST_CAPTURED_WORKING_DIRECTORY'
 $ossEnabledVariableName = 'VIDEOOPS_AIVIDEO_OSS_ENABLED'
 $actuatorPasswordVariableName = 'ACTUATOR_BASIC_PASSWORD'
+$questionnaireSecretVariableName = 'VIDEOOPS_USER_QUESTIONNAIRE_DEEPSEEK_API_KEY'
+$questionnaireCredentialUserName = 'videoops-questionnaire-deepseek'
+$questionnaireTestSecret = 'test-questionnaire-api-key'
 $resolvedFfmpegPath = 'C:\tools\ffmpeg-real.exe'
 $resolvedFfprobePath = 'C:\tools\ffprobe-real.exe'
 $localConfigRoot = Join-Path $repositoryRoot '.local\videoops-agent'
@@ -76,6 +80,14 @@ function Invoke-LocalUserApiLauncherForTest {
         return $null
     }
 
+    function Import-Clixml {
+        param([string]$LiteralPath)
+        return [System.Management.Automation.PSCredential]::new(
+            $questionnaireCredentialUserName,
+            (ConvertTo-SecureString $questionnaireTestSecret -AsPlainText -Force)
+        )
+    }
+
     function Set-Acl {
         param(
             [string]$LiteralPath,
@@ -99,6 +111,9 @@ function Invoke-LocalUserApiLauncherForTest {
             [string]$LiteralPath,
             [string]$PathType
         )
+        if ($LiteralPath -like '*questionnaire.credentials.clixml') {
+            return $script:questionnaireCredentialAvailable
+        }
         return $true
     }
 
@@ -146,6 +161,18 @@ function Invoke-LocalUserApiLauncherForTest {
             $actuatorState,
             'Process'
         )
+        $questionnaireSecretState = switch (
+            [Environment]::GetEnvironmentVariable($questionnaireSecretVariableName, 'Process')
+        ) {
+            $questionnaireTestSecret { 'carrier' }
+            { [string]::IsNullOrWhiteSpace($_) } { 'missing'; break }
+            default { 'unexpected' }
+        }
+        [Environment]::SetEnvironmentVariable(
+            $questionnaireSecretStateCaptureVariableName,
+            $questionnaireSecretState,
+            'Process'
+        )
         [Environment]::SetEnvironmentVariable(
             $workingDirectoryCaptureVariableName,
             (Get-Location).Path,
@@ -174,6 +201,8 @@ Describe 'start-local-user-api runtime configuration' {
         }
         $script:previousOssEnabled = [Environment]::GetEnvironmentVariable($ossEnabledVariableName, 'Process')
         $script:previousActuatorPassword = [Environment]::GetEnvironmentVariable($actuatorPasswordVariableName, 'Process')
+        $script:previousQuestionnaireSecret = [Environment]::GetEnvironmentVariable($questionnaireSecretVariableName, 'Process')
+        $script:questionnaireCredentialAvailable = $true
         [Environment]::SetEnvironmentVariable($actuatorPasswordVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($ossEnabledVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($captureVariableName, $null, 'Process')
@@ -181,6 +210,7 @@ Describe 'start-local-user-api runtime configuration' {
         [Environment]::SetEnvironmentVariable($argumentsCaptureVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($secretStateCaptureVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($actuatorStateCaptureVariableName, $null, 'Process')
+        [Environment]::SetEnvironmentVariable($questionnaireSecretStateCaptureVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($workingDirectoryCaptureVariableName, $null, 'Process')
         $script:testLocalConfigPath = $null
     }
@@ -191,6 +221,7 @@ Describe 'start-local-user-api runtime configuration' {
         [Environment]::SetEnvironmentVariable($argumentsCaptureVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($secretStateCaptureVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($actuatorStateCaptureVariableName, $null, 'Process')
+        [Environment]::SetEnvironmentVariable($questionnaireSecretStateCaptureVariableName, $null, 'Process')
         [Environment]::SetEnvironmentVariable($workingDirectoryCaptureVariableName, $null, 'Process')
         if ($null -ne $script:testLocalConfigPath -and (Test-Path -LiteralPath $script:testLocalConfigPath -PathType Leaf)) {
             Remove-Item -LiteralPath $script:testLocalConfigPath -Force
@@ -214,6 +245,11 @@ Describe 'start-local-user-api runtime configuration' {
         [Environment]::SetEnvironmentVariable(
             $actuatorPasswordVariableName,
             $script:previousActuatorPassword,
+            'Process'
+        )
+        [Environment]::SetEnvironmentVariable(
+            $questionnaireSecretVariableName,
+            $script:previousQuestionnaireSecret,
             'Process'
         )
     }
@@ -267,6 +303,31 @@ Describe 'start-local-user-api runtime configuration' {
         [Environment]::GetEnvironmentVariable($actuatorPasswordVariableName, 'Process') | Should BeNullOrEmpty
     }
 
+    It 'injects the questionnaire key from the DPAPI carrier without exposing it in Java arguments' {
+        [Environment]::SetEnvironmentVariable($questionnaireSecretVariableName, 'inherited-value', 'Process')
+
+        Invoke-LocalUserApiLauncherForTest -Port 18081 | Out-Null
+
+        [Environment]::GetEnvironmentVariable($questionnaireSecretStateCaptureVariableName, 'Process') |
+            Should Be 'carrier'
+        [Environment]::GetEnvironmentVariable($argumentsCaptureVariableName, 'Process') |
+            Should Not Match 'questionnaire.deepseek.api-key'
+        [Environment]::GetEnvironmentVariable($questionnaireSecretVariableName, 'Process') |
+            Should Be 'inherited-value'
+    }
+
+    It 'clears an inherited questionnaire key when the project DPAPI carrier is absent' {
+        $script:questionnaireCredentialAvailable = $false
+        [Environment]::SetEnvironmentVariable($questionnaireSecretVariableName, 'inherited-value', 'Process')
+
+        Invoke-LocalUserApiLauncherForTest -Port 18081 | Out-Null
+
+        [Environment]::GetEnvironmentVariable($questionnaireSecretStateCaptureVariableName, 'Process') |
+            Should Be 'missing'
+        [Environment]::GetEnvironmentVariable($questionnaireSecretVariableName, 'Process') |
+            Should Be 'inherited-value'
+    }
+
     It 'uses the shared fail-closed OSS switch for the child process' {
         [Environment]::SetEnvironmentVariable($ossEnabledVariableName, 'true', 'Process')
 
@@ -318,7 +379,7 @@ Describe 'start-local-user-api runtime configuration' {
         $capturedArguments | Should Match ([Regex]::Escape('--aivideo.oss.enabled=true'))
         $capturedArguments | Should Not Match ([Regex]::Escape('--digital-human.index-tts2.base-url='))
         $capturedArguments | Should Not Match ([Regex]::Escape('--digital-human.comfy-ui.base-url='))
-        $capturedArguments | Should Match ([Regex]::Escape('--questionnaire.deepseek.api-key='))
+        $capturedArguments | Should Not Match 'questionnaire.deepseek.api-key'
         $capturedArguments | Should Match ([Regex]::Escape('--aivideo.whisper.enabled=false'))
         $capturedArguments | Should Match ([Regex]::Escape('--aivideo.runninghub.workflow-dispatch.enabled=false'))
     }
@@ -374,7 +435,7 @@ Describe 'start-local-user-api runtime configuration' {
         $capturedArguments | Should Match ([Regex]::Escape('--aivideo.oss.enabled=false'))
         $capturedArguments | Should Match ([Regex]::Escape('--aivideo.oss.config-key=videoops-agent-dev'))
         $capturedArguments | Should Match ([Regex]::Escape('--aivideo.oss.prefix=videoops-agent/dev'))
-        $capturedArguments | Should Match ([Regex]::Escape('--questionnaire.deepseek.api-key='))
+        $capturedArguments | Should Not Match 'questionnaire.deepseek.api-key'
         $capturedArguments | Should Match ([Regex]::Escape('--digital-human.index-tts2.base-url='))
         $capturedArguments | Should Match ([Regex]::Escape('--digital-human.comfy-ui.base-url='))
         $capturedArguments | Should Match ([Regex]::Escape('--spring.boot.admin.client.enabled=false'))
