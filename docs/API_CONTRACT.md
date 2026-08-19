@@ -232,6 +232,20 @@ published `DirectionCatalogSnapshotDTO`，用这一个不可变快照校验 `exp
 
 #### 数字人声音与视频受限纵链
 
+人工工作台的刷新／重新登录恢复使用一份独立的当前用户草稿，不替代上方文案、生成任务或时间轴资源：
+
+```text
+GET    /api/studio/workflow-draft/current
+PUT    /api/studio/workflow-draft/current
+DELETE /api/studio/workflow-draft/current
+```
+
+- 资源身份只能由当前 `app` 主体和 personal workspace 推导，不接收 `tenantId`、`ownerUserId` 或其他归属字段。
+- `GET` 使用 `aivideo:studio:query`；`PUT` 和 `DELETE` 使用 `aivideo:studio:generate`，均显式 `type = app`。
+- `PUT` 请求字段精确为 `expectedRevision`、`currentStep`、`schemaVersion`、`snapshotJson`。修订号执行 CAS，冲突返回稳定错误且不得覆盖新草稿。
+- `schemaVersion` 当前只允许 `studio-workflow-1`，`currentStep` 只允许 0～6，JSON 快照最大 128 KiB。快照只保存页面恢复所需选择和既有资源／任务 ID；不得保存令牌、凭据、浏览器 `File` 内容或把快照当作任务成功事实。
+- 页面恢复必须重新通过既有 owner-scoped 任务／项目查询校验 ID；缺失、跨 owner、类型不符或状态不足时回退到最近安全步骤，禁止因恢复重新提交 Provider。
+
 2026-08-03 项目负责人批准数字人纵链在统一任务中心与额度能力接入前使用受限过渡契约。该例外只覆盖下列
 `ai-video-user` 端点，不得扩展为第二套通用任务接口：
 

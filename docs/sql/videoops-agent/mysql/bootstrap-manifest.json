@@ -170,6 +170,16 @@
       ]
     },
     {
+      "id": "130",
+      "kind": "schema",
+      "file": "docs/sql/videoops-agent/mysql/130_studio_workflow_draft.sql",
+      "sha256": "F931F50C1933F856DDDCFBED5D1AE9E979ACE2941226FCB8DA1B3E1872FED850",
+      "purpose": "刷新或重新登录后的 owner-scoped 人工工作台草稿恢复",
+      "tables": [
+        "av_studio_workflow_draft"
+      ]
+    },
+    {
       "id": "900",
       "kind": "seed",
       "file": "docs/sql/videoops-agent/mysql/900_minimal_seed.sql",

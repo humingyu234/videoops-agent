@@ -2,15 +2,15 @@
 
 公司项目只作为一次性脱敏代码基线。禁止在共享 `ai_video` 上迁移或初始化，也禁止把公司业务库整库复制到 VideoOps Agent。
 
-独立开发目标固定为本机 `videoops_agent_dev`。唯一 canonical bootstrap 入口是 `docs/sql/videoops-agent/mysql/bootstrap-manifest.json`：`001`、`010`、`020`、`030`、`040`、`050`、`060`、`070`、`080`、`090`、`100`、`110` 为 schema 步骤，`900` 为唯一 seed 步骤。目标身份、顺序、用途、允许写入表和 SHA-256 只以 manifest 为准，本文不复制哈希。
+独立开发目标固定为本机 `videoops_agent_dev`。唯一 canonical bootstrap 入口是 `docs/sql/videoops-agent/mysql/bootstrap-manifest.json`：`001`、`010`、`020`、`030`、`040`、`050`、`060`、`070`、`080`、`090`、`100`、`110`、`120`、`130` 为 schema 步骤，`900` 为唯一 seed 步骤。目标身份、顺序、用途、允许写入表和 SHA-256 只以 manifest 为准，本文不复制哈希。
 
 ## 空库重建顺序
 
 1. 使用受控管理员身份只读查询 `information_schema.schemata`。目标必须是 `127.0.0.1:3306/videoops_agent_dev`，且 schema 不存在；若已经存在但归属不明，立即停止，不覆盖、不 `DROP`。
 2. 创建 `videoops_agent_dev`，字符集 `utf8mb4`，排序规则 `utf8mb4_0900_ai_ci`。创建仅限该 schema 的运行账号 `videoops_agent`；它只保留 `SELECT`、`INSERT`、`UPDATE`、`DELETE`，不得获得全局、其他 schema、表级、列级、例程或 `GRANT OPTION` 权限。管理员/迁移身份只用于受控 bootstrap，不能成为应用依赖。
 3. 运行 `scripts/validate-videoops-database-bootstrap.ps1`。只有输出 `VIDEOOPS_DATABASE_BOOTSTRAP_OK` 且 `scripts/tests/validate-videoops-database-bootstrap.Tests.ps1` 全部通过，才可读取 manifest 执行。
-4. 按 manifest 逐文件执行 `001` 至 `110`。每步执行前复核 SHA-256，执行后检查退出码和文件自身 postcondition；任一步失败立即停止并只读对账。MySQL DDL 可能隐式提交，禁止 `--force`、整串当事务、盲目重跑或继续后续步骤。
-5. 所有 schema postcondition 通过且 38 张表总行数为 0 后，在同一个 MySQL 会话安全注入 `@videoops_creator_password_hash`，执行 `900_minimal_seed.sql`。不得把明文口令或 BCrypt 摘要放进参数、仓库、日志或聊天。使用相同会话摘要重复执行一次，退出码和 postcondition 必须再次通过，行数不得变化。
+4. 按 manifest 逐文件执行 `001` 至 `130`。每步执行前复核 SHA-256，执行后检查退出码和文件自身 postcondition；任一步失败立即停止并只读对账。MySQL DDL 可能隐式提交，禁止 `--force`、整串当事务、盲目重跑或继续后续步骤。
+5. 所有 schema postcondition 通过且 41 张表总行数为 0 后，在同一个 MySQL 会话安全注入 `@videoops_creator_password_hash`，执行 `900_minimal_seed.sql`。不得把明文口令或 BCrypt 摘要放进参数、仓库、日志或聊天。使用相同会话摘要重复执行一次，退出码和 postcondition 必须再次通过，行数不得变化。
 6. 写入前后分别采集共享 `ai_video` 的结构/关键计数摘要与 Redis DB0/DB14 脱敏计数；任何差异都立即失败，不自动恢复旧数据。
 
 禁止使用 Docker、WSL、整库 dump 或旁路连接替代本机 MySQL 8。密码只能经项目本地 Git 忽略的安全存储、临时子进程环境或专用 login-path 使用；不得复制到配置、SQL、命令参数、日志或持久环境。
@@ -34,8 +34,8 @@
 当前 MySQL 8.4 完成合同为：
 
 - schema 身份精确为 `videoops_agent_dev / utf8mb4 / utf8mb4_0900_ai_ci`；
-- 38 张 InnoDB base table；无 view、trigger、routine 或 event；
-- 126 个实际索引（其中 7 个由 MySQL 为外键自动建立）和 129 个全部启用的 CHECK；
+- 41 张 InnoDB base table；无 view、trigger、routine 或 event；
+- 128 个实际索引（其中 7 个由 MySQL 为外键自动建立）和 133 个全部启用的 CHECK；
 - `av_asset.file_id` 为 nullable signed `BIGINT`；
 - 最小 seed 共 33 行，使用相同摘要重复执行后仍为 33；
 - `videoops_agent` 能读取新库，访问 `ai_video` 必须得到权限拒绝；

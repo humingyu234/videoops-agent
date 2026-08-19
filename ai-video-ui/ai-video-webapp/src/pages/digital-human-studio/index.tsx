@@ -7,9 +7,11 @@ import { getRuntimeRuoYiAdapter } from '@/services/ai-video/core/runtimeRuoYiAda
 import { createCreationTimelineApi } from '@/services/ai-video/creation-timeline/api';
 import { createIdempotencyKeyStore } from '@/services/ai-video/creation-timeline/idempotency';
 import type { TimelineTaskDetail } from '@/services/ai-video/creation-timeline/types';
+import { digitalHumanApi } from '@/services/ai-video/digitalHuman/api';
 import { isSucceededDigitalHumanJob } from '@/services/ai-video/digitalHuman/types';
 import type { QuestionnaireAnswerHistory } from '@/services/ai-video/questionnaire/types';
 import { scriptGenerationApi } from '@/services/ai-video/script-generation/api';
+import { studioWorkflowDraftApi } from '@/services/ai-video/studio-workflow-draft/api';
 import { voiceApi } from '@/services/ai-video/voice/api';
 import AvatarSpaceView from './avatar-space/AvatarSpaceView';
 import type { AvatarSpaceSource } from './avatar-space/model';
@@ -35,6 +37,12 @@ import ExportStep from './steps/ExportStep';
 import ScriptStep from './steps/ScriptStep';
 import TimelineStep from './steps/TimelineStep';
 import VoiceStep from './steps/VoiceStep';
+import {
+  readStudioDraftJobIds,
+  restoreStudioDraft,
+  STUDIO_DRAFT_SCHEMA_VERSION,
+  serializeStudioDraft,
+} from './studioDraft';
 import { usePersonalQuotaAccount } from './usePersonalQuotaAccount';
 import './style.css';
 
@@ -175,6 +183,7 @@ const StudioWorkspace: React.FC<{
   const [detail, setDetail] = useState<DetailRequest>();
   const [modal, setModal] = useState<ModalType>();
   const [isScriptGenerating, setIsScriptGenerating] = useState(false);
+  const [draftHydrated, setDraftHydrated] = useState(false);
   const [renderTask, setRenderTask] = useState<TimelineTaskDetail>();
   const renderTaskIdRef = useRef<TimelineTaskDetail['taskId'] | undefined>(
     undefined,
@@ -184,6 +193,11 @@ const StudioWorkspace: React.FC<{
   const timelineProjectCreationInFlight = useRef(false);
   const timelineProjectSession = useRef(0);
   const timelineProjectKeys = useRef(createIdempotencyKeyStore()).current;
+  const draftRevision = useRef(0);
+  const draftReady = useRef(false);
+  const draftEpoch = useRef(0);
+  const lastSavedDraft = useRef('');
+  const draftSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const [avatarSpaceOpen, setAvatarSpaceOpen] = useState(false);
   const [avatarSpaceSource, setAvatarSpaceSource] =
     useState<AvatarSpaceSource>();
@@ -198,6 +212,116 @@ const StudioWorkspace: React.FC<{
     const saved = window.localStorage.getItem('dh-sidebar-collapsed');
     setCollapsed(saved === '1');
   }, []);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const epoch = ++draftEpoch.current;
+    const controller = new AbortController();
+    const initial = readInitialStudioState();
+    draftReady.current = false;
+    setDraftHydrated(false);
+
+    const completeWithoutDraft = () => {
+      if (controller.signal.aborted || epoch !== draftEpoch.current) return;
+      draftRevision.current = 0;
+      lastSavedDraft.current = serializeStudioDraft(initial);
+      draftReady.current = true;
+      setDraftHydrated(true);
+    };
+
+    if (initial.route !== 'create' || initial.timelineProjectId) {
+      completeWithoutDraft();
+      return () => controller.abort();
+    }
+
+    void studioWorkflowDraftApi
+      .getCurrent(controller.signal)
+      .then(async (draft) => {
+        if (!draft) {
+          completeWithoutDraft();
+          return;
+        }
+        const jobIds = readStudioDraftJobIds(draft.snapshotJson);
+        if (!jobIds) {
+          completeWithoutDraft();
+          return;
+        }
+        const [voiceJob, videoJob] = await Promise.all([
+          jobIds.voiceJobId
+            ? digitalHumanApi
+                .getJob(jobIds.voiceJobId, controller.signal)
+                .catch(() => null)
+            : Promise.resolve(null),
+          jobIds.videoJobId
+            ? digitalHumanApi
+                .getJob(jobIds.videoJobId, controller.signal)
+                .catch(() => null)
+            : Promise.resolve(null),
+        ]);
+        const restored = restoreStudioDraft(
+          draft.snapshotJson,
+          voiceJob,
+          videoJob,
+        );
+        if (
+          !restored ||
+          controller.signal.aborted ||
+          epoch !== draftEpoch.current
+        ) {
+          if (!controller.signal.aborted) completeWithoutDraft();
+          return;
+        }
+        draftRevision.current = Number(draft.revision);
+        lastSavedDraft.current = serializeStudioDraft(restored);
+        draftReady.current = true;
+        setState(restored);
+        setDraftHydrated(true);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        completeWithoutDraft();
+        void messageApi.open({
+          content: getErrorMessage(error, '工作台草稿暂时无法恢复，可继续创作'),
+          type: 'warning',
+        });
+      });
+    return () => controller.abort();
+  }, [currentUser?.id, messageApi]);
+
+  useEffect(() => {
+    if (!draftHydrated || !draftReady.current || state.route !== 'create')
+      return;
+    const snapshotJson = serializeStudioDraft(state);
+    if (snapshotJson === lastSavedDraft.current) return;
+    const epoch = draftEpoch.current;
+    const timer = window.setTimeout(() => {
+      draftSaveQueue.current = draftSaveQueue.current
+        .then(async () => {
+          if (
+            epoch !== draftEpoch.current ||
+            snapshotJson === lastSavedDraft.current
+          )
+            return;
+          const saved = await studioWorkflowDraftApi.save({
+            expectedRevision: draftRevision.current,
+            currentStep: state.step,
+            schemaVersion: STUDIO_DRAFT_SCHEMA_VERSION,
+            snapshotJson,
+          });
+          if (epoch !== draftEpoch.current) return;
+          draftRevision.current = Number(saved.revision);
+          lastSavedDraft.current = snapshotJson;
+        })
+        .catch((error) => {
+          if (epoch !== draftEpoch.current) return;
+          void messageApi.open({
+            content: getErrorMessage(error, '当前进度暂未保存，请稍后再试'),
+            type: 'warning',
+          });
+        });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [draftHydrated, messageApi, state]);
 
   const invalidateScriptGeneration = useCallback(() => {
     if (!scriptGenerationInFlight.current) {
@@ -258,7 +382,27 @@ const StudioWorkspace: React.FC<{
     timelineProjectSession.current += 1;
     renderTaskIdRef.current = undefined;
     setRenderTask(undefined);
-    setState({ ...initialStudioState });
+    const epoch = ++draftEpoch.current;
+    draftReady.current = false;
+    const emptyState = { ...initialStudioState };
+    setState(emptyState);
+    draftSaveQueue.current = draftSaveQueue.current
+      .catch(() => undefined)
+      .then(() => studioWorkflowDraftApi.clear())
+      .then(() => {
+        if (epoch !== draftEpoch.current) return;
+        draftRevision.current = 0;
+        lastSavedDraft.current = serializeStudioDraft(emptyState);
+        draftReady.current = true;
+      })
+      .catch((error) => {
+        if (epoch !== draftEpoch.current) return;
+        draftReady.current = true;
+        void messageApi.open({
+          content: getErrorMessage(error, '旧草稿清理失败，请稍后重试'),
+          type: 'warning',
+        });
+      });
     replaceStudioRoute('create');
     setDetail(undefined);
     toast('已创建新项目');
@@ -524,7 +668,7 @@ const StudioWorkspace: React.FC<{
 
   const meta = ROUTE_META[state.route];
 
-  if (!currentUser) {
+  if (!currentUser || !draftHydrated) {
     return null;
   }
 
