@@ -248,22 +248,20 @@ class AgentRunOrchestrationServiceImplTest {
     }
 
     @Test
-    void maxOneAllowsInitialClaimAndFirstFreshRecoveryThenStopsBeforeASecondRecovery() {
+    void maxOneAllowsInitialClaimAndFirstCrashRecoveryThenStopsBeforeASecondRecovery() {
         AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
         when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(
             snapshot(run("queued", 0, null, null, 0, NOW.minusSeconds(10), 0),
                 briefNew(), profile(2, 1, 3_600, 1)),
-            snapshot(run("waiting_external_task", 0, "digital_human_generation", 501L, 0,
-                    NOW.minusSeconds(10), 1), briefNew(), profile(2, 1, 3_600, 1)),
-            snapshot(run("waiting_external_task", 0, "digital_human_generation", 501L, 0,
-                    NOW.minusSeconds(10), 2), briefNew(), profile(2, 1, 3_600, 1)));
+            snapshot(runWithRecovery("running", null, null, 1,
+                    NOW.minusSeconds(1), null), briefNew(), profile(2, 1, 3_600, 1)),
+            snapshot(runWithRecovery("running", null, null, 2,
+                    NOW.minusSeconds(1), null), briefNew(), profile(2, 1, 3_600, 1)));
         when(runService.claim(eq(principal), any())).thenReturn(
-            lease(null, null), lease("digital_human_generation", 501L));
+            lease(null, null), lease(null, null));
         when(toolService.execute(eq(principal), any())).thenReturn(
             voice("queued", false, false), voice("running", false, false));
         when(runService.waitForExternalTask(eq(principal), any()))
-            .thenReturn(waiting("digital_human_generation", 501L));
-        when(runService.deferExternalTask(eq(principal), any()))
             .thenReturn(waiting("digital_human_generation", 501L));
         when(runService.stopOwnedRun(eq(principal), any())).thenReturn(true);
 
@@ -278,9 +276,73 @@ class AgentRunOrchestrationServiceImplTest {
         ArgumentCaptor<AgentToolDTOs.Call> calls = ArgumentCaptor.forClass(AgentToolDTOs.Call.class);
         verify(toolService, times(2)).execute(eq(principal), calls.capture());
         assertThat(calls.getAllValues()).extracting(AgentToolDTOs.Call::toolName)
-            .containsExactly("submit_voice_generation", "get_generation_status");
-        verify(runService, times(1)).waitForExternalTask(eq(principal), any());
-        verify(runService, times(1)).deferExternalTask(eq(principal), any());
+            .containsExactly("submit_voice_generation", "submit_voice_generation");
+        assertThat(calls.getAllValues()).extracting(call -> call.arguments().get("idempotencyKey").textValue())
+            .containsExactly("agent-run:1001:voice:0", "agent-run:1001:voice:0");
+        verify(runService, times(2)).waitForExternalTask(eq(principal), any());
+    }
+
+    @Test
+    void cleanWaitingPollDoesNotSpendResumeBudgetAfterManyFenceRotations() {
+        AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
+        Instant due = NOW.minusSeconds(1);
+        when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(snapshot(
+            runWithRecovery("waiting_external_task", "digital_human_generation", 501L,
+                21, due, due), briefNew(), profile(2, 1, 3_600, 1)));
+        when(runService.claim(eq(principal), any())).thenReturn(lease("digital_human_generation", 501L, 21L));
+        when(toolService.execute(eq(principal), any())).thenReturn(voice("running", false, false));
+        when(runService.deferExternalTask(eq(principal), any()))
+            .thenReturn(waiting("digital_human_generation", 501L));
+
+        AgentRunOrchestrationDTOs.AdvanceResult result = service().advance(principal, command());
+
+        assertThat(result.runStatus()).isEqualTo("waiting_external_task");
+        assertThat(result.waitingTaskId()).isEqualTo(501L);
+        verify(runService).claim(eq(principal), any());
+        verify(runService).deferExternalTask(eq(principal), any());
+        verify(runService, never()).stopOwnedRun(any(), any());
+    }
+
+    @Test
+    void postClaimFenceStopsRecoveryThatExpiresBetweenSnapshotAndClaim() {
+        AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
+        when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(snapshot(
+            runWithRecovery("running", null, null, 2,
+                NOW.plusSeconds(1), null), briefNew(), profile(2, 1, 3_600, 1)));
+        when(runService.claim(eq(principal), any())).thenReturn(
+            new IAgentRunService.AgentRunLease(1001L, 7L, 1L, 3L, "opaque-proof",
+                NOW.plusSeconds(60), null, null));
+        when(runService.stopOwnedRun(eq(principal), any())).thenReturn(true);
+
+        AgentRunOrchestrationDTOs.AdvanceResult result = service().advance(principal, command());
+
+        assertThat(result.errorCode()).isEqualTo("AGENT_RESUME_BUDGET_EXHAUSTED");
+        ArgumentCaptor<IAgentRunService.StopOwnedRunCommand> stop =
+            ArgumentCaptor.forClass(IAgentRunService.StopOwnedRunCommand.class);
+        verify(runService).stopOwnedRun(eq(principal), stop.capture());
+        assertThat(stop.getValue().expectedRowVersion()).isEqualTo(7L);
+        assertThat(stop.getValue().expectedContractRevision()).isEqualTo(1L);
+        verifyNoInteractions(toolService);
+    }
+
+    @Test
+    void fullResumeBudgetDoesNotStopAnActiveRunningOrWaitingLease() {
+        AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
+        when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(
+            snapshot(runWithRecovery("running", null, null, 2,
+                    NOW.plusSeconds(30), null), briefNew(), profile(2, 1, 3_600, 1)),
+            snapshot(runWithRecovery("waiting_external_task", "digital_human_generation", 501L, 2,
+                    NOW.plusSeconds(30), NOW.plusSeconds(5)), briefNew(), profile(2, 1, 3_600, 1)));
+        when(runService.claim(eq(principal), any())).thenReturn(null);
+
+        AgentRunOrchestrationDTOs.AdvanceResult running = service().advance(principal, command());
+        AgentRunOrchestrationDTOs.AdvanceResult waiting = service().advance(principal, command());
+
+        assertThat(running.errorCode()).isEqualTo("AGENT_RUN_STATE_CONFLICT");
+        assertThat(waiting.errorCode()).isEqualTo("AGENT_RUN_STATE_CONFLICT");
+        verify(runService, times(2)).claim(eq(principal), any());
+        verify(runService, never()).stopOwnedRun(any(), any());
+        verifyNoInteractions(toolService);
     }
 
     @Test
@@ -329,7 +391,8 @@ class AgentRunOrchestrationServiceImplTest {
     void exactDeadlineAndResumeBudgetStopBeforeClaimOrTool() {
         AppPrincipalSnapshotDTO principal = principal(ALL_PERMISSIONS);
         IAgentRunService.AgentRunView deadline = run("queued", 0, null, null, 0, NOW.minusSeconds(60), 0);
-        IAgentRunService.AgentRunView budget = run("queued", 0, null, null, 0, NOW.minusSeconds(1), 4);
+        IAgentRunService.AgentRunView budget = runWithRecovery("running", null, null, 4,
+            NOW.minusSeconds(1), null);
         when(runService.getOwnedExecutionSnapshot(principal, 1001L)).thenReturn(
             snapshot(deadline, briefNew(), profile(2, 1, 60, 3)),
             snapshot(budget, briefNew(), profile(2, 1, 60, 3)));
@@ -567,11 +630,23 @@ class AgentRunOrchestrationServiceImplTest {
         return new IAgentRunService.AgentRunView(1001L, 1101L, 1201L, 1L, status, 0L, leaseGeneration,
             waitingSource, waitingId, candidateAssetId == 0 ? null : candidateAssetId, NOW.minusSeconds(10),
             retryCount, qualityRepairCount, pendingApprovalId, approvalRevision, startedAt,
-            NOW.plusSeconds(5), null, null, null);
+            NOW.plusSeconds(5), NOW.plusSeconds(5), null, null, null);
+    }
+
+    private IAgentRunService.AgentRunView runWithRecovery(String status, String waitingSource, Long waitingId,
+                                                           long leaseGeneration,
+                                                           Instant leaseExpiresAt, Instant resumeAfter) {
+        return new IAgentRunService.AgentRunView(1001L, 1101L, 1201L, 1L, status, 0L, leaseGeneration,
+            waitingSource, waitingId, null, NOW.minusSeconds(10), 0L, 0L,
+            null, 1L, NOW.minusSeconds(10), leaseExpiresAt, resumeAfter, null, null, null);
     }
 
     private IAgentRunService.AgentRunLease lease(String waitingSource, Long waitingId) {
-        return new IAgentRunService.AgentRunLease(1001L, 1L, 1L, 1L, "opaque-proof",
+        return lease(waitingSource, waitingId, 1L);
+    }
+
+    private IAgentRunService.AgentRunLease lease(String waitingSource, Long waitingId, long leaseGeneration) {
+        return new IAgentRunService.AgentRunLease(1001L, 1L, 1L, leaseGeneration, "opaque-proof",
             NOW.plusSeconds(60), waitingSource, waitingId);
     }
 

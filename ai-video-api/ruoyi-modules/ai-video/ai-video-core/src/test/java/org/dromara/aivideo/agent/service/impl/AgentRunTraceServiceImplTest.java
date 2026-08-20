@@ -156,7 +156,7 @@ class AgentRunTraceServiceImplTest {
     private IAgentRunService.AgentRunView run() {
         return new IAgentRunService.AgentRunView(RUN_ID, 101L, 201L, 1L, "waiting_approval", 8L, 2L,
             null, null, 901L, BASE.plusSeconds(7), 0L, 0L, 9101L, 1L,
-            BASE.minusSeconds(20), null, null, null, null);
+            BASE.minusSeconds(20), null, null, null, null, null);
     }
 
     private AgentRunEvaluation evaluation(long id, long taskId, long assetId, long projectId, long seconds) {

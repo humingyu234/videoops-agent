@@ -178,7 +178,7 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
             return stop(principal, run.agentRunId(), run.rowVersion(), run.contractRevision(), FAILED,
                 "AGENT_RUN_TIMEOUT", "Agent 执行已达到时间上限");
         }
-        if (run.leaseGeneration() > contract.policy().maxResumeAttempts()) {
+        if (recoveryPending(run) && run.leaseGeneration() > contract.policy().maxResumeAttempts()) {
             return stop(principal, run.agentRunId(), run.rowVersion(), run.contractRevision(), FAILED,
                 "AGENT_RESUME_BUDGET_EXHAUSTED", "Agent 恢复次数已达到上限");
         }
@@ -194,6 +194,14 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
                 command.workerId(), leaseSeconds(contract.policy())));
         if (lease == null) {
             return stateConflict(run);
+        }
+        boolean recoveredAfterSnapshot = (RUNNING.equals(run.runStatus())
+            || WAITING_EXTERNAL_TASK.equals(run.runStatus()))
+            && lease.leaseGeneration() > run.leaseGeneration();
+        if (recoveredAfterSnapshot
+            && lease.leaseGeneration() > (long) contract.policy().maxResumeAttempts() + 1L) {
+            return stop(principal, lease.agentRunId(), lease.rowVersion(), lease.contractRevision(), FAILED,
+                "AGENT_RESUME_BUDGET_EXHAUSTED", "Agent 恢复次数已达到上限");
         }
         try {
             if (lease.waitingTaskSource() != null && lease.waitingTaskId() != null) {
@@ -1140,6 +1148,19 @@ public class AgentRunOrchestrationServiceImpl implements IAgentRunOrchestrationS
         } catch (DateTimeException | ArithmeticException exception) {
             return true;
         }
+    }
+
+    private boolean recoveryPending(IAgentRunService.AgentRunView run) {
+        Instant leaseExpiresAt = run.leaseExpiresAt();
+        if (leaseExpiresAt == null || clock.instant().isBefore(leaseExpiresAt)) {
+            return false;
+        }
+        if (RUNNING.equals(run.runStatus())) {
+            return true;
+        }
+        return WAITING_EXTERNAL_TASK.equals(run.runStatus())
+            && run.resumeAfter() != null
+            && leaseExpiresAt.isAfter(run.resumeAfter());
     }
 
     private Instant resumeAfter(ExecutionPolicy policy) {

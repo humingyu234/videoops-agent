@@ -381,60 +381,78 @@ class AgentRunPersistenceIT {
                 waiting.lease().leaseGeneration(), sha256(waiting.lease().leaseToken()))).isEqualTo(1);
         }
 
+        IAgentRunService.AgentRunLease recovered;
         try (AnnotationConfigApplicationContext restartedContext = openServiceContext()) {
             IAgentRunService service = restartedContext.getBean(IAgentRunService.class);
-            var recovered = service.claim(principal, new IAgentRunService.ClaimAgentRunCommand(
+            recovered = service.claim(principal, new IAgentRunService.ClaimAgentRunCommand(
                 agentRunId, waiting.lease().rowVersion(), 2L, "agent-it-worker-b", 300L));
             assertThat(recovered).isNotNull();
             assertThat(recovered.agentRunId()).isEqualTo(agentRunId);
-            assertThat(recovered.leaseGeneration()).isEqualTo(2L);
+            assertThat(recovered.leaseGeneration()).isEqualTo(1L);
             assertThat(recovered.waitingTaskSource()).isEqualTo("ai_task");
             assertThat(recovered.waitingTaskId()).isEqualTo(701L);
+        }
+
+        try (Connection connection = ENV.openMySqlConnection()) {
+            assertThat(expireClaimedWaitingLeaseAfterResume(connection, ownerUserId, agentRunId,
+                recovered.rowVersion(), recovered.leaseGeneration(), sha256(recovered.leaseToken()))).isEqualTo(1);
+        }
+
+        try (AnnotationConfigApplicationContext crashRecoveryContext = openServiceContext()) {
+            IAgentRunService service = crashRecoveryContext.getBean(IAgentRunService.class);
+            var crashRecovered = service.claim(principal, new IAgentRunService.ClaimAgentRunCommand(
+                agentRunId, recovered.rowVersion(), 2L, "agent-it-worker-c", 300L));
+            assertThat(crashRecovered).isNotNull();
+            assertThat(crashRecovered.agentRunId()).isEqualTo(agentRunId);
+            assertThat(crashRecovered.leaseGeneration()).isEqualTo(2L);
+            assertThat(crashRecovered.waitingTaskSource()).isEqualTo("ai_task");
+            assertThat(crashRecovered.waitingTaskId()).isEqualTo(701L);
 
             assertThat(service.completeExternalTask(principal,
                 new IAgentRunService.CompleteExternalTaskCommand(
-                    recovered.proof(), "ai_task", 701L, 801L, "{\"assetId\":801}"))).isFalse();
+                    crashRecovered.proof(), "ai_task", 701L, 801L, "{\"assetId\":801}"))).isFalse();
             try (Connection connection = ENV.openMySqlConnection()) {
                 updateAiTask(connection, 701L, ownerUserId, "timeline_render", "success", 801L);
             }
             assertThat(service.completeExternalTask(principal,
                 new IAgentRunService.CompleteExternalTaskCommand(
-                    recovered.proof(), "ai_task", 701L, 801L, "{\"assetId\":801}"))).isFalse();
+                    crashRecovered.proof(), "ai_task", 701L, 801L, "{\"assetId\":801}"))).isFalse();
             try (Connection connection = ENV.openMySqlConnection()) {
                 insertCreationAsset(connection, 801L, ownerUserId,
                     "timeline_render_output", 701L, "ready");
             }
 
-            var oldTokenProof = new IAgentRunService.LeaseProof(agentRunId, recovered.rowVersion(),
-                recovered.contractRevision(), recovered.leaseGeneration(), waiting.lease().leaseToken());
+            var oldTokenProof = new IAgentRunService.LeaseProof(agentRunId, crashRecovered.rowVersion(),
+                crashRecovered.contractRevision(), crashRecovered.leaseGeneration(), recovered.leaseToken());
             assertThat(service.completeExternalTask(principal,
                 new IAgentRunService.CompleteExternalTaskCommand(
                     oldTokenProof, "ai_task", 701L, 801L, "{\"assetId\":801}"))).isFalse();
 
-            var oldRevisionProof = new IAgentRunService.LeaseProof(agentRunId, recovered.rowVersion(),
-                1L, recovered.leaseGeneration(), recovered.leaseToken());
+            var oldRevisionProof = new IAgentRunService.LeaseProof(agentRunId, crashRecovered.rowVersion(),
+                1L, crashRecovered.leaseGeneration(), crashRecovered.leaseToken());
             assertThat(service.completeExternalTask(principal,
                 new IAgentRunService.CompleteExternalTaskCommand(
                     oldRevisionProof, "ai_task", 701L, 801L, "{\"assetId\":801}"))).isFalse();
             assertThat(service.completeExternalTask(principal,
                 new IAgentRunService.CompleteExternalTaskCommand(
-                    recovered.proof(), "ai_task", 700L, 801L, "{\"assetId\":801}"))).isFalse();
+                    crashRecovered.proof(), "ai_task", 700L, 801L, "{\"assetId\":801}"))).isFalse();
             assertThat(service.completeExternalTask(principal,
                 new IAgentRunService.CompleteExternalTaskCommand(
-                    recovered.proof(), "ai_task", 701L, 801L, "{\"assetId\":801}"))).isTrue();
+                    crashRecovered.proof(), "ai_task", 701L, 801L, "{\"assetId\":801}"))).isTrue();
             assertThat(service.completeExternalTask(principal,
                 new IAgentRunService.CompleteExternalTaskCommand(
-                    recovered.proof(), "ai_task", 701L, 802L, "{\"assetId\":802}"))).isFalse();
+                    crashRecovered.proof(), "ai_task", 701L, 802L, "{\"assetId\":802}"))).isFalse();
 
             var completed = service.getOwnedRun(principal, agentRunId);
             assertThat(completed.runStatus()).isEqualTo("completed");
-            assertThat(completed.rowVersion()).isEqualTo(4L);
+            assertThat(completed.rowVersion()).isEqualTo(5L);
             assertThat(completed.leaseGeneration()).isEqualTo(2L);
             assertThat(completed.candidateAssetId()).isEqualTo(801L);
         }
 
         try (Connection verificationConnection = ENV.openMySqlConnection()) {
             assertThat(rowCount(verificationConnection, table(RUN))).isEqualTo(1L);
+            assertThat(rowCount(verificationConnection, table(AI_TASK))).isEqualTo(2L);
         }
     }
 
@@ -893,6 +911,21 @@ class AgentRunPersistenceIT {
               AND contract_revision = 2 AND waiting_contract_revision = 2
               AND row_version = ? AND lease_generation = ? AND lease_token_digest = ?
               AND lease_expires_at <= UTC_TIMESTAMP(6)
+              AND waiting_task_source = 'ai_task' AND waiting_task_id = 701
+            """.formatted(table(RUN)), ownerUserId, runId, rowVersion, generation, tokenDigest);
+    }
+
+    private int expireClaimedWaitingLeaseAfterResume(Connection connection, long ownerUserId, long runId,
+                                                      long rowVersion, long generation, String tokenDigest)
+        throws SQLException {
+        return update(connection, """
+            UPDATE `%s`
+            SET lease_expires_at = DATE_ADD(resume_after, INTERVAL 1 MICROSECOND)
+            WHERE owner_user_id = ? AND agent_run_id = ? AND run_status = 'waiting_external_task'
+              AND contract_revision = 2 AND waiting_contract_revision = 2
+              AND row_version = ? AND lease_generation = ? AND lease_token_digest = ?
+              AND resume_after < UTC_TIMESTAMP(6)
+              AND lease_expires_at > resume_after
               AND waiting_task_source = 'ai_task' AND waiting_task_id = 701
             """.formatted(table(RUN)), ownerUserId, runId, rowVersion, generation, tokenDigest);
     }

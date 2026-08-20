@@ -479,20 +479,36 @@ class DigitalHumanGenerationServiceImplTest {
     }
 
     @Test
-    void doesNotPollWhenAnotherRequestOwnsTheDatabaseLease() {
+    void activePollLeasePreventsConcurrentTimeoutFromOverwritingPollOwner() {
         DigitalHumanGenerationJobMapper mapper = mock(DigitalHumanGenerationJobMapper.class);
         IDigitalHumanVideoService videoService = mock(IDigitalHumanVideoService.class);
+        IDigitalHumanMediaStorageService storage = mock(IDigitalHumanMediaStorageService.class);
         DigitalHumanGenerationJob video = videoJob(751L);
+        video.setCreateTime(LocalDateTime.now().minusMinutes(61));
+        video.setPollToken("poll-a");
+        video.setPollLeaseUntil(LocalDateTime.now().plusMinutes(5));
         when(mapper.selectOwnedById(751L, 2001L, 1001L)).thenReturn(video);
-        when(mapper.update(isNull(), any())).thenReturn(0);
+        when(mapper.update(isNull(), any())).thenAnswer(invocation -> {
+            LambdaUpdateWrapper<DigitalHumanGenerationJob> update = invocation.getArgument(1);
+            String sqlSegment = update.getSqlSegment();
+            return sqlSegment.contains("poll_token") && sqlSegment.contains("poll_lease_until") ? 0 : 1;
+        });
         DigitalHumanGenerationServiceImpl service = new DigitalHumanGenerationServiceImpl(
             mapper, mock(IVoiceSynthesisService.class), videoService,
-            mock(IDigitalHumanMediaStorageService.class), SAME_THREAD, () -> 999L);
+            storage, SAME_THREAD, () -> 999L);
 
         DigitalHumanJobDTO result = service.getJob(751L, OWNER);
 
         assertThat(result.status()).isEqualTo(DigitalHumanJobStatus.RUNNING);
+        assertThat(video.getPollToken()).isEqualTo("poll-a");
+        assertThat(result.errorCode()).isNull();
         verifyNoInteractions(videoService);
+        verify(storage, never()).storeOutput(any(), any(), any(), any());
+        ArgumentCaptor<LambdaUpdateWrapper<DigitalHumanGenerationJob>> updates = updateCaptor();
+        verify(mapper, times(2)).update(isNull(), updates.capture());
+        LambdaUpdateWrapper<DigitalHumanGenerationJob> timeout = updates.getAllValues().get(1);
+        assertThat(timeout.getSqlSegment()).contains("poll_token", "poll_lease_until");
+        assertWhereStatus(timeout, DigitalHumanJobStatus.RUNNING);
     }
 
     @Test
@@ -568,25 +584,56 @@ class DigitalHumanGenerationServiceImplTest {
     }
 
     @Test
-    void expiresProviderRunningVideoAfterSixtyMinutesWithoutPolling() {
+    void pollsLateProviderSuccessBeforeApplyingVideoTimeout() {
         DigitalHumanGenerationJobMapper mapper = mock(DigitalHumanGenerationJobMapper.class);
         IDigitalHumanVideoService videoService = mock(IDigitalHumanVideoService.class);
+        IDigitalHumanMediaStorageService storage = mock(IDigitalHumanMediaStorageService.class);
         DigitalHumanGenerationJob video = videoJob(782L);
         video.setCreateTime(LocalDateTime.now().minusMinutes(61));
+        byte[] mp4 = mp4Bytes("late-success");
         when(mapper.selectOwnedById(782L, 2001L, 1001L)).thenReturn(video);
         when(mapper.update(isNull(), any())).thenReturn(1);
+        when(videoService.poll("prompt-401")).thenReturn(new DigitalHumanVideoPollDTO(
+            DigitalHumanVideoProviderStatus.SUCCEEDED, 100, mp4, "video/mp4", "mp4", null));
+        when(storage.storeOutput(eq(782L), anyString(), eq("video/mp4"), eq(mp4)))
+            .thenReturn(new DigitalHumanStoredMediaDTO(
+                "782/output/video.mp4", "video/mp4", mp4.length, "video-sha"));
         DigitalHumanGenerationServiceImpl service = new DigitalHumanGenerationServiceImpl(
             mapper, mock(IVoiceSynthesisService.class), videoService,
-            mock(IDigitalHumanMediaStorageService.class), SAME_THREAD, () -> 999L);
+            storage, SAME_THREAD, () -> 999L);
 
         DigitalHumanJobDTO result = service.getJob(782L, OWNER);
 
+        assertThat(result.status()).isEqualTo(DigitalHumanJobStatus.SUCCEEDED);
+        assertThat(result.outputAvailable()).isTrue();
+        assertThat(result.errorCode()).isNull();
+        verify(videoService).poll("prompt-401");
+        verify(storage).storeOutput(eq(782L), anyString(), eq("video/mp4"), eq(mp4));
+        verify(mapper, times(2)).update(isNull(), any());
+    }
+
+    @Test
+    void expiresLateProviderRunningVideoAfterOneFinalPoll() {
+        DigitalHumanGenerationJobMapper mapper = mock(DigitalHumanGenerationJobMapper.class);
+        IDigitalHumanVideoService videoService = mock(IDigitalHumanVideoService.class);
+        IDigitalHumanMediaStorageService storage = mock(IDigitalHumanMediaStorageService.class);
+        DigitalHumanGenerationJob video = videoJob(783L);
+        video.setCreateTime(LocalDateTime.now().minusMinutes(61));
+        when(mapper.selectOwnedById(783L, 2001L, 1001L)).thenReturn(video);
+        when(mapper.update(isNull(), any())).thenReturn(1);
+        when(videoService.poll("prompt-401")).thenReturn(new DigitalHumanVideoPollDTO(
+            DigitalHumanVideoProviderStatus.RUNNING, 50, null, null, null, null));
+        DigitalHumanGenerationServiceImpl service = new DigitalHumanGenerationServiceImpl(
+            mapper, mock(IVoiceSynthesisService.class), videoService, storage, SAME_THREAD, () -> 999L);
+
+        DigitalHumanJobDTO result = service.getJob(783L, OWNER);
+
         assertThat(result.status()).isEqualTo(DigitalHumanJobStatus.FAILED);
+        assertThat(result.errorCode()).isEqualTo("GENERATION_TIMEOUT");
         assertThat(result.errorMessage()).contains("超时");
-        ArgumentCaptor<LambdaUpdateWrapper<DigitalHumanGenerationJob>> update = updateCaptor();
-        verify(mapper).update(isNull(), update.capture());
-        assertWhereStatus(update.getValue(), DigitalHumanJobStatus.RUNNING);
-        verifyNoInteractions(videoService);
+        verify(videoService).poll("prompt-401");
+        verify(storage, never()).storeOutput(any(), any(), any(), any());
+        verify(mapper, times(3)).update(isNull(), any());
     }
 
     @Test

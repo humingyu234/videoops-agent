@@ -536,6 +536,9 @@ public class AgentRunServiceImpl implements IAgentRunService {
         String token = newLeaseToken();
         String tokenDigest = sha256(token);
         long generation = number(current.getLeaseGeneration());
+        boolean incrementsGeneration = status != AgentRunStatus.WAITING_EXTERNAL_TASK
+            || (current.getLeaseExpiresAt() != null && current.getResumeAfter() != null
+                && current.getLeaseExpiresAt().isAfter(current.getResumeAfter()));
         int updated;
         if (status == AgentRunStatus.WAITING_EXTERNAL_TASK) {
             if (!validWaitingIdentity(current)) {
@@ -556,7 +559,8 @@ public class AgentRunServiceImpl implements IAgentRunService {
             return null;
         }
         return new AgentRunLease(current.getAgentRunId(), command.expectedRowVersion() + 1,
-            command.expectedContractRevision(), generation + 1, token, instant(expiresAt),
+            command.expectedContractRevision(), generation + (incrementsGeneration ? 1 : 0), token,
+            instant(expiresAt),
             current.getWaitingTaskSource(), current.getWaitingTaskId());
     }
 
@@ -1100,7 +1104,8 @@ public class AgentRunServiceImpl implements IAgentRunService {
             number(run.getRowVersion()), number(run.getLeaseGeneration()), run.getWaitingTaskSource(),
             run.getWaitingTaskId(), run.getCandidateAssetId(), instant(run.getStateChangedAt()),
             number(run.getRetryCount()), number(run.getQualityRepairCount()), run.getPendingApprovalId(),
-            number(run.getApprovalRevision()), instant(run.getStartedAt()), instant(run.getResumeAfter()),
+            number(run.getApprovalRevision()), instant(run.getStartedAt()), instant(run.getLeaseExpiresAt()),
+            instant(run.getResumeAfter()),
             instant(run.getFinishedAt()), run.getErrorCode(), run.getErrorSummary());
     }
 

@@ -145,6 +145,7 @@ class AgentRunCrashWindowIT {
                 principal, fixture.advance(running, "agent-it-crash-b"));
 
             assertThat(recovered.runStatus()).isEqualTo("waiting_external_task");
+            assertThat(runService.getOwnedRun(principal, agentRunId).leaseGeneration()).isEqualTo(2L);
             assertThat(recovered.waitingTaskSource()).isEqualTo("digital_human_generation");
             assertThat(recovered.waitingTaskId()).isEqualTo(voiceJobId);
             var persisted = runService.getOwnedRun(principal, agentRunId);

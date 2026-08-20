@@ -397,9 +397,9 @@ public interface AgentRunMapper extends BaseMapperPlus<AgentRun, AgentRun> {
     /** Claim a queued run or recover the same identity after its running lease expires. */
     @Update("""
         UPDATE av_agent_run
-        SET run_status = 'running',
+        SET lease_generation = lease_generation + 1,
+            run_status = 'running',
             row_version = row_version + 1,
-            lease_generation = lease_generation + 1,
             lease_owner = #{leaseOwner},
             lease_token_digest = #{leaseTokenDigest},
             lease_expires_at = #{leaseExpiresAt},
@@ -434,7 +434,8 @@ public interface AgentRunMapper extends BaseMapperPlus<AgentRun, AgentRun> {
     @Update("""
         UPDATE av_agent_run
         SET row_version = row_version + 1,
-            lease_generation = lease_generation + 1,
+            lease_generation = lease_generation
+                + CASE WHEN lease_expires_at > resume_after THEN 1 ELSE 0 END,
             lease_owner = #{leaseOwner},
             lease_token_digest = #{leaseTokenDigest},
             lease_expires_at = #{leaseExpiresAt},

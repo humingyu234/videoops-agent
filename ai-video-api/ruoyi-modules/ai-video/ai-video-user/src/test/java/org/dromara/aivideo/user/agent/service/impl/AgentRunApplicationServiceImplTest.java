@@ -423,7 +423,7 @@ class AgentRunApplicationServiceImplTest {
     private IAgentRunService.AgentRunView run() {
         return new IAgentRunService.AgentRunView(103L, 101L, 102L, 1L, "queued", 0L, 0L,
             null, null, null, Instant.EPOCH, 0L, 0L, null, 0L,
-            null, null, null, null, null);
+            null, null, null, null, null, null);
     }
 
     private IAgentRunService.ExecutionSnapshot snapshot(String briefJson) {

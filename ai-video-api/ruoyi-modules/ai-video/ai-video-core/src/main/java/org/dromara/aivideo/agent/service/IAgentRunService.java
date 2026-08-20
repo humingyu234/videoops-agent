@@ -270,6 +270,7 @@ public interface IAgentRunService {
         Long pendingApprovalId,
         long approvalRevision,
         Instant startedAt,
+        Instant leaseExpiresAt,
         Instant resumeAfter,
         Instant finishedAt,
         String errorCode,

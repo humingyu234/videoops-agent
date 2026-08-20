@@ -179,16 +179,16 @@ public class DigitalHumanGenerationServiceImpl implements IDigitalHumanGeneratio
     @Override
     public DigitalHumanJobDTO getJob(Long jobId, DigitalHumanOwnerDTO owner) {
         DigitalHumanGenerationJob job = requireOwned(jobId, owner);
-        if (isTimedOut(job, LocalDateTime.now())) {
-            if (fail(job, job.getStatus(), "GENERATION_TIMEOUT", "数字人生成超时，请重试")) {
-                return toDto(job);
-            }
-            job = requireOwned(jobId, owner);
-        }
         if (job.getJobType() == DigitalHumanJobType.VIDEO_GENERATE
             && job.getStatus() == DigitalHumanJobStatus.RUNNING
             && job.getProviderJobId() != null) {
             refreshVideo(job);
+            job = requireOwned(jobId, owner);
+        }
+        if (isTimedOut(job, LocalDateTime.now())) {
+            if (fail(job, job.getStatus(), "GENERATION_TIMEOUT", "数字人生成超时，请重试")) {
+                return toDto(job);
+            }
             job = requireOwned(jobId, owner);
         }
         return toDto(job);
@@ -546,14 +546,22 @@ public class DigitalHumanGenerationServiceImpl implements IDigitalHumanGeneratio
             && expectedStatus != DigitalHumanJobStatus.RUNNING) {
             return false;
         }
-        int updated = mapper.update(null, ownedStatusUpdate(job, expectedStatus)
+        LocalDateTime now = LocalDateTime.now();
+        LambdaUpdateWrapper<DigitalHumanGenerationJob> update = ownedStatusUpdate(job, expectedStatus);
+        if (job.getJobType() == DigitalHumanJobType.VIDEO_GENERATE
+            && expectedStatus == DigitalHumanJobStatus.RUNNING
+            && job.getProviderJobId() != null) {
+            update.and(poll -> poll.isNull(DigitalHumanGenerationJob::getPollToken)
+                .or().lt(DigitalHumanGenerationJob::getPollLeaseUntil, now));
+        }
+        int updated = mapper.update(null, update
             .set(DigitalHumanGenerationJob::getStatus, DigitalHumanJobStatus.FAILED)
             .set(DigitalHumanGenerationJob::getStage, DigitalHumanJobStage.FAILED)
             .set(DigitalHumanGenerationJob::getErrorCode, code)
             .set(DigitalHumanGenerationJob::getErrorMessage, message)
             .set(DigitalHumanGenerationJob::getPollToken, null)
             .set(DigitalHumanGenerationJob::getPollLeaseUntil, null)
-            .set(DigitalHumanGenerationJob::getUpdateTime, LocalDateTime.now()));
+            .set(DigitalHumanGenerationJob::getUpdateTime, now));
         if (updated == 1) {
             job.setStatus(DigitalHumanJobStatus.FAILED);
             job.setStage(DigitalHumanJobStage.FAILED);

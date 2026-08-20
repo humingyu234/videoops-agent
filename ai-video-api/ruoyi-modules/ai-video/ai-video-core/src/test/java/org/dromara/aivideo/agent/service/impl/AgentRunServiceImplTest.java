@@ -470,11 +470,13 @@ class AgentRunServiceImplTest {
     }
 
     @Test
-    void recoversTheSameWaitingRunAndTaskWithANewFenceOnlyAfterExpiry() {
+    void cleanWaitingPollKeepsItsGenerationWhileRotatingTheTokenAndRowFence() {
         AgentRun waiting = run(501, 7, "waiting_external_task", 2, 1);
         waiting.setWaitingTaskSource("digital_human_generation");
         waiting.setWaitingTaskId(701L);
         waiting.setWaitingContractRevision(1L);
+        waiting.setLeaseExpiresAt(DATABASE_NOW.minusSeconds(1));
+        waiting.setResumeAfter(DATABASE_NOW.minusSeconds(1));
         when(runMapper.selectOne(any(Wrapper.class))).thenReturn(waiting);
         when(runMapper.selectDatabaseNow()).thenReturn(DATABASE_NOW);
         when(runMapper.recoverWaitingLease(anyLong(), anyLong(), anyLong(), anyLong(), anyLong(),
@@ -486,7 +488,7 @@ class AgentRunServiceImplTest {
 
         assertThat(recovered.agentRunId()).isEqualTo(501);
         assertThat(recovered.rowVersion()).isEqualTo(3);
-        assertThat(recovered.leaseGeneration()).isEqualTo(2);
+        assertThat(recovered.leaseGeneration()).isEqualTo(1);
         assertThat(recovered.waitingTaskSource()).isEqualTo("digital_human_generation");
         assertThat(recovered.waitingTaskId()).isEqualTo(701);
         verify(runMapper).recoverWaitingLease(eq(501L), eq(7L), eq(1L), eq(2L), eq(1L),
@@ -528,6 +530,11 @@ class AgentRunServiceImplTest {
             "lease_expires_at > #{databaseNow}", "waiting_task_source = #{taskSource}",
             "waiting_task_id = #{taskId}", "job.job_type IN ('voice_generate', 'video_generate')",
             "job.status IN ('queued', 'running')");
+        String queuedOrRunningClaim = updateSql("claimLease");
+        assertThat(queuedOrRunningClaim).contains("lease_generation = lease_generation + 1");
+        String waitingClaim = updateSql("recoverWaitingLease");
+        assertThat(waitingClaim).contains("lease_generation = lease_generation",
+            "CASE WHEN lease_expires_at > resume_after THEN 1 ELSE 0 END");
         String advanceCas = updateSql("advanceExternalTask");
         assertThat(advanceCas).contains("waiting_task_source = #{completedTaskSource}",
             "waiting_task_id = #{completedTaskId}", "waiting_task_source = #{nextTaskSource}",
